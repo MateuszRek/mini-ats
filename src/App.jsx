@@ -226,6 +226,26 @@ export default function MiniATSApp() {
     fetchCandidates();
   };
 
+  const openCv = async (cvPath) => {
+    if (!cvPath) return;
+
+    if (String(cvPath).startsWith("http")) {
+      window.open(cvPath, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const { data, error } = await supabase.storage
+      .from("CV")
+      .createSignedUrl(cvPath, 60);
+
+    if (error) {
+      setMessage("Nie udało się otworzyć CV: " + error.message);
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
   const fetchCandidates = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -293,9 +313,10 @@ export default function MiniATSApp() {
 
     let cvUrl = form.cv_url;
 
-    // 🔥 upload CV do Supabase Storage
+    // 🔥 upload CV do prywatnego Supabase Storage
     if (form.cv_file) {
-      const fileName = `${Date.now()}_${form.cv_file.name}`;
+      const safeFileName = form.cv_file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const fileName = `cv/${Date.now()}_${safeFileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("CV")
@@ -306,11 +327,8 @@ export default function MiniATSApp() {
         return;
       }
 
-      const { data } = supabase.storage
-        .from("CV")
-        .getPublicUrl(fileName);
-
-      cvUrl = data.publicUrl;
+      // zapisujemy ścieżkę pliku, nie publiczny URL
+      cvUrl = fileName;
     }
 
     const payload = {
@@ -413,10 +431,23 @@ export default function MiniATSApp() {
   };
 
   const deleteCandidate = async (id) => {
+    if (!confirm("Czy na pewno chcesz usunąć tego kandydata?")) return;
+
+    // Najpierw usuwamy przypisania do projektów, bo blokują usunięcie kandydata
+    const { error: relationsError } = await supabase
+      .from("candidate_projects")
+      .delete()
+      .eq("candidate_id", id);
+
+    if (relationsError) {
+      setMessage("Nie udało się usunąć przypisań projektu: " + relationsError.message);
+      return;
+    }
+
     const { error } = await supabase.from("candidates").delete().eq("id", id);
 
     if (error) {
-      setMessage("Nie udało się usunąć: " + error.message);
+      setMessage("Nie udało się usunąć kandydata: " + error.message);
       return;
     }
 
@@ -1102,14 +1133,13 @@ export default function MiniATSApp() {
                   {candidate.cv_url && (
                     <p>
                       <b>CV:</b>{" "}
-                      <a
-                        href={candidate.cv_url}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => openCv(candidate.cv_url)}
                         className="text-blue-600 font-semibold hover:underline"
                       >
                         Otwórz CV
-                      </a>
+                      </button>
                     </p>
                   )}
                 </div>
