@@ -96,6 +96,12 @@ export default function MiniATSApp() {
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
 
+  const clientProjectName = useMemo(() => {
+    if (!clientProjectId) return "wybrany projekt";
+    const project = projects.find((p) => p.id === clientProjectId);
+    return project?.name || project?.nazwa || "wybrany projekt";
+  }, [projects, clientProjectId]);
+
   const [suggestions, setSuggestions] = useState({
     languages: [],
     frameworks: [],
@@ -615,16 +621,22 @@ export default function MiniATSApp() {
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Mini ATS kandydatów</h1>
-              <p className="mt-2 text-slate-500">{clientView ? "Widok klienta — kandydaci tylko z wybranego projektu." : "Baza kandydatów online dla Ciebie i Klaudii. Dane zapisują się w Supabase."}</p>
+              <p className="mt-2 text-slate-500">
+                {clientView
+                  ? `Shortlista kandydatów — ${clientProjectName}`
+                  : "Baza kandydatów online dla Ciebie i Klaudii. Dane zapisują się w Supabase."}
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={fetchCandidates} className="rounded-2xl border px-5 py-3 font-semibold hover:bg-slate-50">
-                Odśwież bazę
-              </button>
-              <button onClick={logout} className="rounded-2xl border px-5 py-3 font-semibold text-red-600 hover:bg-red-50">
-                Wyloguj
-              </button>
-            </div>
+            {!clientView && (
+              <div className="flex flex-wrap gap-2">
+                <button onClick={fetchCandidates} className="rounded-2xl border px-5 py-3 font-semibold hover:bg-slate-50">
+                  Odśwież bazę
+                </button>
+                <button onClick={logout} className="rounded-2xl border px-5 py-3 font-semibold text-red-600 hover:bg-red-50">
+                  Wyloguj
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -733,47 +745,55 @@ export default function MiniATSApp() {
           </>
         )}
 
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <label className="flex items-center gap-2 text-sm font-semibold">
-            <input
-              type="checkbox"
-              checked={onlyFavorites}
-              onChange={(e) => setOnlyFavorites(e.target.checked)}
-            />
-            Tylko shortlista ⭐
-          </label>
-          <p className="text-sm text-slate-500">Znaleziono: <b>{filtered.length}</b> kandydatów</p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode("list")}
-              className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "list" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
-            >
-              Lista
-            </button>
-            <button
-              onClick={() => setViewMode("kanban")}
-              className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "kanban" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
-            >
-              Kanban
-            </button>
-            <button
-              onClick={() => {
-                setQuery("");
-                setGlobalStatusFilter("");
-                setProjectFilter("");
-                setProjectStatusFilter("");
-                setTagFilter("");
-                setLanguageFilter("");
-                setFrameworkFilter("");
-                setAreaFilter("");
-                setSortBy("newest");
-              }}
-              className="text-sm font-medium text-slate-600 hover:underline"
-            >
-              Wyczyść filtry
-            </button>
+        {!clientView && (
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                checked={onlyFavorites}
+                onChange={(e) => setOnlyFavorites(e.target.checked)}
+              />
+              Tylko shortlista ⭐
+            </label>
+            <p className="text-sm text-slate-500">Znaleziono: <b>{filtered.length}</b> kandydatów</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode("list")}
+                className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "list" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+              >
+                Lista
+              </button>
+              <button
+                onClick={() => setViewMode("kanban")}
+                className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "kanban" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+              >
+                Kanban
+              </button>
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setGlobalStatusFilter("");
+                  setProjectFilter("");
+                  setProjectStatusFilter("");
+                  setTagFilter("");
+                  setLanguageFilter("");
+                  setFrameworkFilter("");
+                  setAreaFilter("");
+                  setSortBy("newest");
+                }}
+                className="text-sm font-medium text-slate-600 hover:underline"
+              >
+                Wyczyść filtry
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+
+        {clientView && (
+          <p className="mb-4 text-center text-sm font-semibold text-slate-500">
+            Znaleziono: <b>{filtered.length}</b> kandydatów
+          </p>
+        )}
 
         {loading && <div className="rounded-3xl bg-white p-6 text-center shadow-sm">Ładowanie...</div>}
 
