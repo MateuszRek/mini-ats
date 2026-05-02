@@ -91,6 +91,8 @@ export default function MiniATSApp() {
   const [areaFilter, setAreaFilter] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [clientStatusFilter, setClientStatusFilter] = useState("");
+  const [clientRatingFilter, setClientRatingFilter] = useState("");
   const [session, setSession] = useState(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -538,8 +540,10 @@ export default function MiniATSApp() {
       const matchesFramework = !frameworkFilter || includesIgnoreCase(c.framework, frameworkFilter);
       const matchesArea = !areaFilter || c.obszar === areaFilter;
       const matchesFavorite = !onlyFavorites || c.favorite;
+      const matchesClientStatus = !clientView || !clientStatusFilter || c.candidate_projects?.some((cp) => cp.project_id === clientProjectId && cp.status === clientStatusFilter);
+      const matchesClientRating = !clientView || !clientRatingFilter || (Number(c.rating) || 0) >= Number(clientRatingFilter);
 
-      return matchesQuery && matchesGlobalStatus && matchesProject && matchesProjectStatus && matchesTags && matchesLanguage && matchesFramework && matchesArea && matchesFavorite;
+      return matchesQuery && matchesGlobalStatus && matchesProject && matchesProjectStatus && matchesTags && matchesLanguage && matchesFramework && matchesArea && matchesFavorite && matchesClientStatus && matchesClientRating;
     });
 
     return result.sort((a, b) => {
@@ -553,7 +557,7 @@ export default function MiniATSApp() {
       if (sortBy === "experience_asc") return (parseFloat(a.doświadczenie) || 0) - (parseFloat(b.doświadczenie) || 0);
       return 0;
     });
-  }, [candidates, query, globalStatusFilter, projectFilter, projectStatusFilter, tagFilter, languageFilter, frameworkFilter, areaFilter, sortBy, onlyFavorites]);
+  }, [candidates, query, globalStatusFilter, projectFilter, projectStatusFilter, tagFilter, languageFilter, frameworkFilter, areaFilter, sortBy, onlyFavorites, clientView, clientProjectId, clientStatusFilter, clientRatingFilter]);
 
   if (authLoading) {
     return (
@@ -790,9 +794,46 @@ export default function MiniATSApp() {
         )}
 
         {clientView && (
-          <p className="mb-4 text-center text-sm font-semibold text-slate-500">
-            Znaleziono: <b>{filtered.length}</b> kandydatów
-          </p>
+          <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
+            <div className="mb-3 text-lg font-bold">🔎 Wyszukiwarka klienta</div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <select
+                className="rounded-xl border p-3"
+                value={clientStatusFilter}
+                onChange={(e) => setClientStatusFilter(e.target.value)}
+              >
+                <option value="">Status: wszystkie</option>
+                {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+
+              <select
+                className="rounded-xl border p-3"
+                value={clientRatingFilter}
+                onChange={(e) => setClientRatingFilter(e.target.value)}
+              >
+                <option value="">Ocena: wszystkie</option>
+                <option value="5">Minimum 5 ★</option>
+                <option value="4">Minimum 4 ★</option>
+                <option value="3">Minimum 3 ★</option>
+                <option value="2">Minimum 2 ★</option>
+                <option value="1">Minimum 1 ★</option>
+              </select>
+
+              <button
+                onClick={() => {
+                  setClientStatusFilter("");
+                  setClientRatingFilter("");
+                }}
+                className="rounded-xl border px-4 py-3 font-semibold hover:bg-slate-50"
+              >
+                Wyczyść filtry
+              </button>
+            </div>
+
+            <p className="mt-3 text-center text-sm font-semibold text-slate-500">
+              Znaleziono: <b>{filtered.length}</b> kandydatów
+            </p>
+          </section>
         )}
 
         {loading && <div className="rounded-3xl bg-white p-6 text-center shadow-sm">Ładowanie...</div>}
