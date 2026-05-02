@@ -89,6 +89,10 @@ export default function MiniATSApp() {
   const [areaFilter, setAreaFilter] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [session, setSession] = useState(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(true);
 
   const [suggestions, setSuggestions] = useState({
     languages: [],
@@ -97,6 +101,28 @@ export default function MiniATSApp() {
 
   const setField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const login = async () => {
+    setMessage("");
+    const { error } = await supabase.auth.signInWithPassword({
+      email: loginEmail.trim(),
+      password: loginPassword,
+    });
+
+    if (error) {
+      setMessage("Błąd logowania: " + error.message);
+      return;
+    }
+
+    setLoginPassword("");
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setCandidates([]);
+    setProjects([]);
+    setMessage("Wylogowano");
   };
 
   const fetchProjects = async () => {
@@ -226,9 +252,26 @@ export default function MiniATSApp() {
   };
 
   useEffect(() => {
+    const initAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session);
+      setAuthLoading(false);
+    };
+
+    initAuth();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
     fetchCandidates();
     fetchProjects();
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     const langs = new Set();
@@ -250,6 +293,7 @@ export default function MiniATSApp() {
 
     let cvUrl = form.cv_url;
 
+    // 🔥 upload CV do Supabase Storage
     if (form.cv_file) {
       const fileName = `${Date.now()}_${form.cv_file.name}`;
 
@@ -315,6 +359,7 @@ export default function MiniATSApp() {
 
       insertedId = data.id;
 
+      // 🔥 dodanie projektów przy tworzeniu
       if (formProjects.length > 0) {
         const relations = formProjects.map((projectId) => ({
           candidate_id: insertedId,
@@ -382,6 +427,7 @@ export default function MiniATSApp() {
   const toggleFavorite = async (candidate) => {
     const newValue = !candidate.favorite;
 
+    // szybka zmiana w UI, żeby od razu było widać kliknięcie
     setCandidates((prev) =>
       prev.map((c) => (c.id === candidate.id ? { ...c, favorite: newValue } : c))
     );
@@ -461,6 +507,53 @@ export default function MiniATSApp() {
     });
   }, [candidates, query, globalStatusFilter, projectFilter, projectStatusFilter, tagFilter, languageFilter, frameworkFilter, areaFilter, sortBy, onlyFavorites]);
 
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-900">
+        <div className="rounded-3xl bg-white p-8 shadow-sm">Ładowanie...</div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-900">
+        <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-sm">
+          <h1 className="text-3xl font-black tracking-tight">Mini ATS</h1>
+          <p className="mt-2 text-slate-500">Zaloguj się, żeby zobaczyć bazę kandydatów.</p>
+
+          <div className="mt-6 grid gap-3">
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Email"
+              type="email"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+            />
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Hasło"
+              type="password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") login();
+              }}
+            />
+            <button
+              onClick={login}
+              className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white hover:bg-slate-800"
+            >
+              Zaloguj
+            </button>
+          </div>
+
+          {message && <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
       <div className="mx-auto max-w-6xl">
@@ -470,9 +563,14 @@ export default function MiniATSApp() {
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Mini ATS kandydatów</h1>
               <p className="mt-2 text-slate-500">Baza kandydatów online dla Ciebie i Klaudii. Dane zapisują się w Supabase.</p>
             </div>
-            <button onClick={fetchCandidates} className="rounded-2xl border px-5 py-3 font-semibold hover:bg-slate-50">
-              Odśwież bazę
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={fetchCandidates} className="rounded-2xl border px-5 py-3 font-semibold hover:bg-slate-50">
+                Odśwież bazę
+              </button>
+              <button onClick={logout} className="rounded-2xl border px-5 py-3 font-semibold text-red-600 hover:bg-red-50">
+                Wyloguj
+              </button>
+            </div>
           </div>
         </header>
 
@@ -480,39 +578,96 @@ export default function MiniATSApp() {
           <div className="mb-4 flex items-center gap-2 text-lg font-bold"><Icon>{editingId ? "✎" : "＋"}</Icon> {editingId ? "Edytuj kandydata" : "Dodaj kandydata"}</div>
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <input className="rounded-xl border p-3" placeholder="Imię i nazwisko" value={form.name} onChange={(e) => setField("name", e.target.value)} />
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Imię i nazwisko"
+              value={form.name}
+              onChange={(e) => setField("name", e.target.value)}
+            />
             <select className="rounded-xl border p-3" value={form.status} onChange={(e) => setField("status", e.target.value)}>
               {STATUSES.map((s) => <option key={s}>{s}</option>)}
             </select>
-            <input className="rounded-xl border p-3" placeholder="Email" value={form.email} onChange={(e) => setField("email", e.target.value)} />
-            <input className="rounded-xl border p-3" placeholder="Telefon" value={form.telefon} onChange={(e) => setField("telefon", e.target.value)} />
-            <input className="rounded-xl border p-3" placeholder="LinkedIn URL" value={form.linkedin} onChange={(e) => setField("linkedin", e.target.value)} />
-            <input className="rounded-xl border p-3" placeholder="Lokalizacja / miasto" value={form.lokalizacja} onChange={(e) => setField("lokalizacja", e.target.value)} />
-            <input className="rounded-xl border p-3" placeholder="Doświadczenie, np. 5 lat" value={form.doświadczenie} onChange={(e) => setField("doświadczenie", e.target.value)} />
-
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Email"
+              value={form.email}
+              onChange={(e) => setField("email", e.target.value)}
+            />
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Telefon"
+              value={form.telefon}
+              onChange={(e) => setField("telefon", e.target.value)}
+            />
+            <input
+              className="rounded-xl border p-3"
+              placeholder="LinkedIn URL"
+              value={form.linkedin}
+              onChange={(e) => setField("linkedin", e.target.value)}
+            />
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Lokalizacja / miasto"
+              value={form.lokalizacja}
+              onChange={(e) => setField("lokalizacja", e.target.value)}
+            />
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Doświadczenie, np. 5 lat"
+              value={form.doświadczenie}
+              onChange={(e) => setField("doświadczenie", e.target.value)}
+            />
             <div className="relative">
-              <input className="rounded-xl border p-3 w-full" placeholder="Język programowania, np. Java, Python" value={form.jezyk_programowania} onChange={(e) => setField("jezyk_programowania", e.target.value)} />
+              <input
+                className="rounded-xl border p-3 w-full"
+                placeholder="Język programowania, np. Java, Python"
+                value={form.jezyk_programowania}
+                onChange={(e) => setField("jezyk_programowania", e.target.value)}
+              />
               {form.jezyk_programowania && (
                 <div className="absolute z-10 mt-1 w-full rounded-xl border bg-white shadow">
-                  {suggestions.languages.filter((l) => l.toLowerCase().includes(form.jezyk_programowania.toLowerCase())).map((l) => (
-                    <div key={l} onClick={() => setField("jezyk_programowania", l)} className="cursor-pointer px-3 py-2 hover:bg-slate-100">{l}</div>
-                  ))}
+                  {suggestions.languages
+                    .filter((l) => l.toLowerCase().includes(form.jezyk_programowania.toLowerCase()))
+                    .map((l) => (
+                      <div
+                        key={l}
+                        onClick={() => setField("jezyk_programowania", l)}
+                        className="cursor-pointer px-3 py-2 hover:bg-slate-100"
+                      >
+                        {l}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
-
             <div className="relative">
-              <input className="rounded-xl border p-3 w-full" placeholder="Framework, np. React, Spring, Django" value={form.framework} onChange={(e) => setField("framework", e.target.value)} />
+              <input
+                className="rounded-xl border p-3 w-full"
+                placeholder="Framework, np. React, Spring, Django"
+                value={form.framework}
+                onChange={(e) => setField("framework", e.target.value)}
+              />
               {form.framework && (
                 <div className="absolute z-10 mt-1 w-full rounded-xl border bg-white shadow">
-                  {suggestions.frameworks.filter((f) => f.toLowerCase().includes(form.framework.toLowerCase())).map((f) => (
-                    <div key={f} onClick={() => setField("framework", f)} className="cursor-pointer px-3 py-2 hover:bg-slate-100">{f}</div>
-                  ))}
+                  {suggestions.frameworks
+                    .filter((f) => f.toLowerCase().includes(form.framework.toLowerCase()))
+                    .map((f) => (
+                      <div
+                        key={f}
+                        onClick={() => setField("framework", f)}
+                        className="cursor-pointer px-3 py-2 hover:bg-slate-100"
+                      >
+                        {f}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
-
-            <select className="rounded-xl border p-3" value={form.obszar} onChange={(e) => setField("obszar", e.target.value)}>
+            <select
+              className="rounded-xl border p-3"
+              value={form.obszar}
+              onChange={(e) => setField("obszar", e.target.value)}
+            >
               <option value="">Obszar: wybierz</option>
               <option value="Frontend">Frontend</option>
               <option value="Backend">Backend</option>
@@ -525,24 +680,47 @@ export default function MiniATSApp() {
               <option value="Sales / Nieruchomości">Sales / Nieruchomości</option>
               <option value="Inne">Inne</option>
             </select>
+            <input
+              className="rounded-xl border p-3 lg:col-span-3"
+              placeholder="Tagi, np. Senior, Remote, Warsaw"
+              value={form.tagi}
+              onChange={(e) => setField("tagi", e.target.value)}
+            />
+            <textarea
+              className="min-h-24 rounded-xl border p-3 lg:col-span-2"
+              placeholder="Notatki"
+              value={form.notatki}
+              onChange={(e) => setField("notatki", e.target.value)}
+            />
 
-            <input className="rounded-xl border p-3 lg:col-span-3" placeholder="Tagi, np. Senior, Remote, Warsaw" value={form.tagi} onChange={(e) => setField("tagi", e.target.value)} />
-            <textarea className="min-h-24 rounded-xl border p-3 lg:col-span-2" placeholder="Notatki" value={form.notatki} onChange={(e) => setField("notatki", e.target.value)} />
-
+            {/* 🔥 CV UPLOAD */}
             <div className="lg:col-span-3">
               <label className="mb-1 block text-sm font-semibold">CV (PDF)</label>
-              <input type="file" accept=".pdf" onChange={(e) => setField("cv_file", e.target.files[0])} className="w-full rounded-xl border p-2" />
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={(e) => setField("cv_file", e.target.files[0])}
+                className="w-full rounded-xl border p-2"
+              />
             </div>
 
+            {/* 🔥 WYBÓR PROJEKTÓW PRZY DODAWANIU */}
             <div className="lg:col-span-3">
               <label className="mb-1 block text-sm font-semibold">Dodaj do projektów</label>
               <div className="flex flex-wrap gap-2">
                 {projects.map((p) => {
                   const selected = formProjects.includes(p.id);
                   return (
-                    <button key={p.id} type="button" onClick={() => {
-                      setFormProjects((prev) => selected ? prev.filter((id) => id !== p.id) : [...prev, p.id]);
-                    }} className={`rounded-full px-3 py-1 text-sm font-bold border ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}>
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setFormProjects((prev) =>
+                          selected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                        );
+                      }}
+                      className={`rounded-full px-3 py-1 text-sm font-bold border ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}
+                    >
                       {p.name || p.nazwa}
                     </button>
                   );
@@ -553,7 +731,13 @@ export default function MiniATSApp() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">Ocena:</span>
               {[1,2,3,4,5].map((r) => (
-                <button key={r} onClick={() => setField("rating", r)} className={`text-lg ${form.rating >= r ? "text-yellow-500" : "text-slate-300"}`}>★</button>
+                <button
+                  key={r}
+                  onClick={() => setField("rating", r)}
+                  className={`text-lg ${form.rating >= r ? "text-yellow-500" : "text-slate-300"}`}
+                >
+                  ★
+                </button>
               ))}
             </div>
           </div>
@@ -562,7 +746,11 @@ export default function MiniATSApp() {
             <button onClick={addCandidate} className="w-full rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white hover:bg-slate-800 md:w-auto">
               {editingId ? "Zapisz zmiany" : "Dodaj kandydata"}
             </button>
-            {editingId && <button onClick={cancelEditCandidate} className="w-full rounded-xl border px-5 py-3 font-semibold hover:bg-slate-50 md:w-auto">Anuluj edycję</button>}
+            {editingId && (
+              <button onClick={cancelEditCandidate} className="w-full rounded-xl border px-5 py-3 font-semibold hover:bg-slate-50 md:w-auto">
+                Anuluj edycję
+              </button>
+            )}
           </div>
 
           {message && <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
@@ -570,14 +758,30 @@ export default function MiniATSApp() {
 
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2 text-lg font-bold">📁 Projekty</div>
+
           <div className="flex gap-2">
-            <input className="w-full rounded-xl border p-3" placeholder="Nazwa projektu" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
-            <button onClick={addProject} className="rounded-xl bg-green-600 px-4 py-2 font-bold text-white hover:bg-green-700">Dodaj projekt</button>
+            <input
+              className="w-full rounded-xl border p-3"
+              placeholder="Nazwa projektu"
+              value={newProjectName}
+              onChange={(e) => setNewProjectName(e.target.value)}
+            />
+            <button
+              onClick={addProject}
+              className="rounded-xl bg-green-600 px-4 py-2 font-bold text-white hover:bg-green-700"
+            >
+              Dodaj projekt
+            </button>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
             {projects.map((p) => (
-              <button key={p.id} onClick={() => setProjectFilter(p.id)} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold hover:bg-slate-200" title="Filtruj po projekcie">
+              <button
+                key={p.id}
+                onClick={() => setProjectFilter(p.id)}
+                className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold hover:bg-slate-200"
+                title="Filtruj po projekcie"
+              >
                 {p.name || p.nazwa || "Projekt"}
               </button>
             ))}
@@ -586,30 +790,67 @@ export default function MiniATSApp() {
 
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2 text-lg font-bold"><Icon>🔎</Icon> Wyszukiwarka</div>
-          <input className="w-full rounded-xl border p-3" placeholder="Szukaj po nazwisku, statusie, emailu, telefonie, lokalizacji, doświadczeniu lub notatkach..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input
+            className="w-full rounded-xl border p-3"
+            placeholder="Szukaj po nazwisku, statusie, emailu, telefonie, lokalizacji, doświadczeniu lub notatkach..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
 
           <div className="mt-3 grid gap-3 md:grid-cols-4">
             <div className="relative">
-              <input className="w-full rounded-xl border p-3" placeholder="Język, np. Java / Python" value={languageFilter} onChange={(e) => setLanguageFilter(e.target.value)} />
+              <input
+                className="w-full rounded-xl border p-3"
+                placeholder="Język, np. Java / Python"
+                value={languageFilter}
+                onChange={(e) => setLanguageFilter(e.target.value)}
+              />
               {languageFilter && (
                 <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border bg-white shadow">
-                  {suggestions.languages.filter((l) => l.toLowerCase().includes(languageFilter.toLowerCase())).slice(0, 8).map((l) => (
-                    <div key={l} onClick={() => setLanguageFilter(l)} className="cursor-pointer px-3 py-2 text-sm hover:bg-slate-100">{l}</div>
-                  ))}
+                  {suggestions.languages
+                    .filter((l) => l.toLowerCase().includes(languageFilter.toLowerCase()))
+                    .slice(0, 8)
+                    .map((l) => (
+                      <div
+                        key={l}
+                        onClick={() => setLanguageFilter(l)}
+                        className="cursor-pointer px-3 py-2 text-sm hover:bg-slate-100"
+                      >
+                        {l}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
             <div className="relative">
-              <input className="w-full rounded-xl border p-3" placeholder="Framework, np. React / Spring" value={frameworkFilter} onChange={(e) => setFrameworkFilter(e.target.value)} />
+              <input
+                className="w-full rounded-xl border p-3"
+                placeholder="Framework, np. React / Spring"
+                value={frameworkFilter}
+                onChange={(e) => setFrameworkFilter(e.target.value)}
+              />
               {frameworkFilter && (
                 <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border bg-white shadow">
-                  {suggestions.frameworks.filter((f) => f.toLowerCase().includes(frameworkFilter.toLowerCase())).slice(0, 8).map((f) => (
-                    <div key={f} onClick={() => setFrameworkFilter(f)} className="cursor-pointer px-3 py-2 text-sm hover:bg-slate-100">{f}</div>
-                  ))}
+                  {suggestions.frameworks
+                    .filter((f) => f.toLowerCase().includes(frameworkFilter.toLowerCase()))
+                    .slice(0, 8)
+                    .map((f) => (
+                      <div
+                        key={f}
+                        onClick={() => setFrameworkFilter(f)}
+                        className="cursor-pointer px-3 py-2 text-sm hover:bg-slate-100"
+                      >
+                        {f}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
-            <select className="rounded-xl border p-3" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
+            <select
+              className="rounded-xl border p-3"
+              value={areaFilter}
+              onChange={(e) => setAreaFilter(e.target.value)}
+            >
               <option value="">Obszar: wszystkie</option>
               <option value="Frontend">Frontend</option>
               <option value="Backend">Backend</option>
@@ -622,16 +863,37 @@ export default function MiniATSApp() {
               <option value="Sales / Nieruchomości">Sales / Nieruchomości</option>
               <option value="Inne">Inne</option>
             </select>
-            <input className="rounded-xl border p-3" placeholder="Tag, np. React / Senior / Remote" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} />
-            <select className="rounded-xl border p-3" value={globalStatusFilter} onChange={(e) => setGlobalStatusFilter(e.target.value)}>
+            <input
+              className="rounded-xl border p-3"
+              placeholder="Tag, np. React / Senior / Remote"
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+            />
+            <select
+              className="rounded-xl border p-3"
+              value={globalStatusFilter}
+              onChange={(e) => setGlobalStatusFilter(e.target.value)}
+            >
               <option value="">Status kandydata: wszystkie</option>
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select className="rounded-xl border p-3" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+
+            <select
+              className="rounded-xl border p-3"
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+            >
               <option value="">Projekt: wszystkie</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.name || p.nazwa || "Projekt bez nazwy"}</option>)}
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name || p.nazwa || "Projekt bez nazwy"}</option>
+              ))}
             </select>
-            <select className="rounded-xl border p-3" value={projectStatusFilter} onChange={(e) => setProjectStatusFilter(e.target.value)}>
+
+            <select
+              className="rounded-xl border p-3"
+              value={projectStatusFilter}
+              onChange={(e) => setProjectStatusFilter(e.target.value)}
+            >
               <option value="">Status w projekcie: wszystkie</option>
               {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -640,7 +902,11 @@ export default function MiniATSApp() {
 
         <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center gap-2 text-lg font-bold">↕️ Sortowanie</div>
-          <select className="w-full rounded-xl border p-3 md:w-80" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <select
+            className="w-full rounded-xl border p-3 md:w-80"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+          >
             <option value="newest">Najnowsi pierwsi</option>
             <option value="oldest">Najstarsi pierwsi</option>
             <option value="rating_desc">Najwyższa ocena</option>
@@ -654,24 +920,43 @@ export default function MiniATSApp() {
 
         <div className="mb-4 flex items-center justify-between gap-3">
           <label className="flex items-center gap-2 text-sm font-semibold">
-            <input type="checkbox" checked={onlyFavorites} onChange={(e) => setOnlyFavorites(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={onlyFavorites}
+              onChange={(e) => setOnlyFavorites(e.target.checked)}
+            />
             Tylko shortlista ⭐
           </label>
           <p className="text-sm text-slate-500">Znaleziono: <b>{filtered.length}</b> kandydatów</p>
           <div className="flex items-center gap-2">
-            <button onClick={() => setViewMode("list")} className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "list" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}>Lista</button>
-            <button onClick={() => setViewMode("kanban")} className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "kanban" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}>Kanban</button>
-            <button onClick={() => {
-              setQuery("");
-              setGlobalStatusFilter("");
-              setProjectFilter("");
-              setProjectStatusFilter("");
-              setTagFilter("");
-              setLanguageFilter("");
-              setFrameworkFilter("");
-              setAreaFilter("");
-              setSortBy("newest");
-            }} className="text-sm font-medium text-slate-600 hover:underline">Wyczyść filtry</button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "list" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+            >
+              Lista
+            </button>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === "kanban" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`}
+            >
+              Kanban
+            </button>
+            <button
+              onClick={() => {
+                setQuery("");
+                setGlobalStatusFilter("");
+                setProjectFilter("");
+                setProjectStatusFilter("");
+                setTagFilter("");
+                setLanguageFilter("");
+                setFrameworkFilter("");
+                setAreaFilter("");
+                setSortBy("newest");
+              }}
+              className="text-sm font-medium text-slate-600 hover:underline"
+            >
+              Wyczyść filtry
+            </button>
           </div>
         </div>
 
@@ -686,9 +971,15 @@ export default function MiniATSApp() {
 
         {viewMode === "kanban" && !loading && filtered.length > 0 && (
           <div className="mb-4">
-            <select className="rounded-xl border p-3" value={kanbanProjectId} onChange={(e) => setKanbanProjectId(e.target.value)}>
+            <select
+              className="rounded-xl border p-3"
+              value={kanbanProjectId}
+              onChange={(e) => setKanbanProjectId(e.target.value)}
+            >
               <option value="">Wybierz projekt do Kanban</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.name || p.nazwa}</option>)}
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name || p.nazwa}</option>
+              ))}
             </select>
           </div>
         )}
@@ -712,14 +1003,29 @@ export default function MiniATSApp() {
                     {statusCandidates.map(({ candidate, cp }) => (
                       <div key={cp.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
                         <div className="font-black text-slate-900">{candidate.name}</div>
-                        <div className="mt-1 text-xs text-slate-500">{candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}</div>
-                        {cp.notes && <div className="mt-2 rounded-xl bg-white p-2 text-xs text-slate-600">{cp.notes}</div>}
-                        <select className={`mt-3 w-full rounded-xl border p-2 text-xs font-bold ${getStatusStyle(cp.status || "New")}`} value={cp.status || "New"} onChange={(e) => updateProjectStatus(cp.id, e.target.value)}>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}
+                        </div>
+
+                        {cp.notes && (
+                          <div className="mt-2 rounded-xl bg-white p-2 text-xs text-slate-600">
+                            {cp.notes}
+                          </div>
+                        )}
+
+                        <select
+                          className={`mt-3 w-full rounded-xl border p-2 text-xs font-bold ${getStatusStyle(cp.status || "New")}`}
+                          value={cp.status || "New"}
+                          onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
+                        >
                           {STATUSES.map((s) => <option key={s}>{s}</option>)}
                         </select>
                       </div>
                     ))}
-                    {statusCandidates.length === 0 && <div className="rounded-2xl border border-dashed p-4 text-center text-xs text-slate-400">Brak</div>}
+
+                    {statusCandidates.length === 0 && (
+                      <div className="rounded-2xl border border-dashed p-4 text-center text-xs text-slate-400">Brak</div>
+                    )}
                   </div>
                 </div>
               );
@@ -740,10 +1046,18 @@ export default function MiniATSApp() {
 
               <div className="p-5">
                 <div className="flex items-start justify-between gap-4">
-                  <button onClick={() => toggleFavorite(candidate)} className={`text-2xl ${candidate.favorite ? "text-yellow-400" : "text-slate-300 hover:text-yellow-400"}`} title="Dodaj do shortlisty">★</button>
+                  <button
+                    onClick={() => toggleFavorite(candidate)}
+                    className={`text-2xl ${candidate.favorite ? "text-yellow-400" : "text-slate-300 hover:text-yellow-400"}`}
+                    title="Dodaj do shortlisty"
+                  >
+                    ★
+                  </button>
                   <div>
                     <div className="flex items-center gap-3">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-sm ${getAccentStyle(candidate.status || "New")}`}>👤</div>
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-sm ${getAccentStyle(candidate.status || "New")}`}>
+                        👤
+                      </div>
                       <div>
                         <h3 className="text-xl font-black tracking-tight text-slate-900">{candidate.name}</h3>
                         <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -765,27 +1079,48 @@ export default function MiniATSApp() {
                   {candidate.lokalizacja && <p><b>Lokalizacja:</b> {candidate.lokalizacja}</p>}
                   {candidate.doświadczenie && <p><b>Doświadczenie:</b> {candidate.doświadczenie}</p>}
                   {candidate.obszar && <p><b>Obszar:</b> {candidate.obszar}</p>}
-                  {candidate.rating > 0 && <p><b>Ocena:</b> {'★'.repeat(candidate.rating)}</p>}
+                  {candidate.rating > 0 && (
+                    <p><b>Ocena:</b> {'★'.repeat(candidate.rating)}</p>
+                  )}
                   {candidate.jezyk_programowania && <p><b>Język programowania:</b> {candidate.jezyk_programowania}</p>}
                   {candidate.framework && <p><b>Framework:</b> {candidate.framework}</p>}
                   {candidate.tagi && (
                     <div className="flex flex-wrap gap-2">
                       {candidate.tagi.split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
-                        <button key={tag} onClick={() => setTagFilter(tag)} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900" title="Filtruj po tagu">#{tag}</button>
+                        <button
+                          key={tag}
+                          onClick={() => setTagFilter(tag)}
+                          className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900"
+                          title="Filtruj po tagu"
+                        >
+                          #{tag}
+                        </button>
                       ))}
                     </div>
                   )}
                   {candidate.notatki && <p className="rounded-2xl bg-white p-3 shadow-sm"><b>Notatki:</b> {candidate.notatki}</p>}
                   {candidate.cv_url && (
-                    <p><b>CV:</b>{" "}
-                      <a href={candidate.cv_url} target="_blank" rel="noreferrer" className="text-blue-600 font-semibold hover:underline">Otwórz CV</a>
+                    <p>
+                      <b>CV:</b>{" "}
+                      <a
+                        href={candidate.cv_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 font-semibold hover:underline"
+                      >
+                        Otwórz CV
+                      </a>
                     </p>
                   )}
                 </div>
 
                 <div className="mt-4">
                   <label className="mb-2 block text-sm font-semibold text-slate-700">Status procesu</label>
-                  <select className={`w-full rounded-2xl border p-3 font-semibold shadow-sm ${getStatusStyle(candidate.status || "New")}`} value={candidate.status || "New"} onChange={(e) => updateStatus(candidate.id, e.target.value)}>
+                  <select
+                    className={`w-full rounded-2xl border p-3 font-semibold shadow-sm ${getStatusStyle(candidate.status || "New")}`}
+                    value={candidate.status || "New"}
+                    onChange={(e) => updateStatus(candidate.id, e.target.value)}
+                  >
                     {STATUSES.map((s) => <option key={s}>{s}</option>)}
                   </select>
                 </div>
@@ -798,17 +1133,36 @@ export default function MiniATSApp() {
                       candidate.candidate_projects.map((cp) => (
                         <div key={cp.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                           <div className="mb-2 flex items-center justify-between gap-2">
-                            <button onClick={() => setProjectFilter(cp.project_id)} className="font-bold text-slate-800 hover:text-blue-700 hover:underline" title="Filtruj po tym projekcie">
+                            <button
+                              onClick={() => setProjectFilter(cp.project_id)}
+                              className="font-bold text-slate-800 hover:text-blue-700 hover:underline"
+                              title="Filtruj po tym projekcie"
+                            >
                               {cp.Projekty?.name || cp.Projekty?.nazwa || "Projekt bez nazwy"}
                             </button>
-                            <button onClick={() => removeCandidateFromProject(cp.id)} className="rounded-full px-2 text-lg font-black text-slate-400 hover:bg-red-50 hover:text-red-600" title="Usuń projekt z kandydata">×</button>
+                            <button
+                              onClick={() => removeCandidateFromProject(cp.id)}
+                              className="rounded-full px-2 text-lg font-black text-slate-400 hover:bg-red-50 hover:text-red-600"
+                              title="Usuń projekt z kandydata"
+                            >
+                              ×
+                            </button>
                           </div>
 
-                          <select className={`w-full rounded-xl border p-2 text-sm font-semibold ${getStatusStyle(cp.status || "New")}`} value={cp.status || "New"} onChange={(e) => updateProjectStatus(cp.id, e.target.value)}>
+                          <select
+                            className={`w-full rounded-xl border p-2 text-sm font-semibold ${getStatusStyle(cp.status || "New")}`}
+                            value={cp.status || "New"}
+                            onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
+                          >
                             {STATUSES.map((s) => <option key={s}>{s}</option>)}
                           </select>
 
-                          <textarea className="mt-2 w-full rounded-xl border p-2 text-sm" placeholder="Notatki do tego projektu..." defaultValue={cp.notes || ""} onBlur={(e) => updateProjectNotes(cp.id, e.target.value)} />
+                          <textarea
+                            className="mt-2 w-full rounded-xl border p-2 text-sm"
+                            placeholder="Notatki do tego projektu..."
+                            defaultValue={cp.notes || ""}
+                            onBlur={(e) => updateProjectNotes(cp.id, e.target.value)}
+                          />
                         </div>
                       ))
                     ) : (
@@ -817,18 +1171,33 @@ export default function MiniATSApp() {
                   </div>
 
                   <div className="flex gap-2">
-                    <select className="w-full rounded-xl border p-2" value={selectedProjects[candidate.id] || ""} onChange={(e) => setSelectedProjects((prev) => ({ ...prev, [candidate.id]: e.target.value }))}>
+                    <select
+                      className="w-full rounded-xl border p-2"
+                      value={selectedProjects[candidate.id] || ""}
+                      onChange={(e) => setSelectedProjects((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+                    >
                       <option value="">Wybierz projekt</option>
-                      {projects.map((p) => <option key={p.id} value={p.id}>{p.name || p.nazwa || "Projekt bez nazwy"}</option>)}
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name || p.nazwa || "Projekt bez nazwy"}</option>
+                      ))}
                     </select>
-                    <button onClick={() => assignProject(candidate.id)} className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">Przypisz</button>
+                    <button
+                      onClick={() => assignProject(candidate.id)}
+                      className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
+                    >
+                      Przypisz
+                    </button>
                   </div>
                 </div>
 
                 <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => startEditCandidate(candidate)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold shadow-sm hover:bg-slate-50"><Icon>✎</Icon> Edytuj</button>
-                    <button onClick={() => deleteCandidate(candidate.id)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold text-red-600 shadow-sm hover:bg-red-50"><Icon>🗑</Icon> Usuń</button>
+                    <button onClick={() => startEditCandidate(candidate)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold shadow-sm hover:bg-slate-50">
+                      <Icon>✎</Icon> Edytuj
+                    </button>
+                    <button onClick={() => deleteCandidate(candidate.id)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold text-red-600 shadow-sm hover:bg-red-50">
+                      <Icon>🗑</Icon> Usuń
+                    </button>
                   </div>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-400">ID: {candidate.id?.slice(0, 6)}</span>
                 </div>
