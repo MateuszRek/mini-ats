@@ -68,6 +68,8 @@ function Icon({ children }) {
 }
 
 export default function MiniATSApp() {
+  const [clientView, setClientView] = useState(false);
+  const [clientProjectId, setClientProjectId] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [query, setQuery] = useState("");
   const [form, setForm] = useState(emptyCandidate);
@@ -272,6 +274,14 @@ export default function MiniATSApp() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("client") === "true") {
+      setClientView(true);
+      setClientProjectId(params.get("project") || "");
+      setAuthLoading(false);
+      return;
+    }
+
     const initAuth = async () => {
       const { data } = await supabase.auth.getSession();
       setSession(data.session);
@@ -288,10 +298,10 @@ export default function MiniATSApp() {
   }, []);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session && !clientView) return;
     fetchCandidates();
     fetchProjects();
-  }, [session]);
+  }, [session, clientView]);
 
   useEffect(() => {
     const langs = new Set();
@@ -514,7 +524,8 @@ export default function MiniATSApp() {
 
       const matchesQuery = !query || includesIgnoreCase(text, query);
       const matchesGlobalStatus = !globalStatusFilter || c.status === globalStatusFilter;
-      const matchesProject = !projectFilter || c.candidate_projects?.some((cp) => cp.project_id === projectFilter);
+      const activeProjectFilter = clientView ? clientProjectId : projectFilter;
+      const matchesProject = !activeProjectFilter || c.candidate_projects?.some((cp) => cp.project_id === activeProjectFilter);
       const matchesProjectStatus = !projectStatusFilter || c.candidate_projects?.some((cp) => cp.status === projectStatusFilter);
       const matchesTags = !tagFilter || includesIgnoreCase(c.tagi, tagFilter);
       const matchesLanguage = !languageFilter || includesIgnoreCase(c.jezyk_programowania, languageFilter);
@@ -546,7 +557,7 @@ export default function MiniATSApp() {
     );
   }
 
-  if (!session) {
+  if (!session && !clientView) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-900">
         <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-sm">
@@ -589,10 +600,22 @@ export default function MiniATSApp() {
     <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8">
       <div className="mx-auto max-w-6xl">
         <header className="mb-8 rounded-3xl bg-white p-6 shadow-sm">
+          {!clientView && (
+            <div className="mb-4">
+              <button
+                onClick={() => {
+                  setMessage("Link klienta generujesz przy konkretnym projekcie poniżej 📎");
+                }}
+                className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
+              >
+                🔗 Skopiuj link dla klienta
+              </button>
+            </div>
+          )}
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Mini ATS kandydatów</h1>
-              <p className="mt-2 text-slate-500">Baza kandydatów online dla Ciebie i Klaudii. Dane zapisują się w Supabase.</p>
+              <p className="mt-2 text-slate-500">{clientView ? "Widok klienta — kandydaci tylko z wybranego projektu." : "Baza kandydatów online dla Ciebie i Klaudii. Dane zapisują się w Supabase."}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button onClick={fetchCandidates} className="rounded-2xl border px-5 py-3 font-semibold hover:bg-slate-50">
@@ -807,14 +830,29 @@ export default function MiniATSApp() {
 
           <div className="mt-3 flex flex-wrap gap-2">
             {projects.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => setProjectFilter(p.id)}
-                className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold hover:bg-slate-200"
-                title="Filtruj po projekcie"
-              >
-                {p.name || p.nazwa || "Projekt"}
-              </button>
+              <div key={p.id} className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold">
+                <button
+                  onClick={() => setProjectFilter(p.id)}
+                  className="hover:text-blue-700 hover:underline"
+                  title="Filtruj po projekcie"
+                >
+                  {p.name || p.nazwa || "Projekt"}
+                </button>
+                {!clientView && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = `${window.location.origin}?client=true&project=${p.id}`;
+                      navigator.clipboard.writeText(link);
+                      setMessage(`Link klienta do projektu „${p.name || p.nazwa || "Projekt"}” skopiowany 📎`);
+                    }}
+                    className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-blue-700"
+                    title="Skopiuj link klienta tylko do tego projektu"
+                  >
+                    link
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </section>
