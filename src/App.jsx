@@ -628,364 +628,110 @@ export default function MiniATSApp() {
           </div>
         </header>
 
-        <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2 text-lg font-bold"><Icon>{editingId ? "✎" : "＋"}</Icon> {editingId ? "Edytuj kandydata" : "Dodaj kandydata"}</div>
+        {!clientView && (
+          <>
+            <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2 text-lg font-bold"><Icon>{editingId ? "✎" : "＋"}</Icon> {editingId ? "Edytuj kandydata" : "Dodaj kandydata"}</div>
 
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Imię i nazwisko"
-              value={form.name}
-              onChange={(e) => setField("name", e.target.value)}
-            />
-            <select className="rounded-xl border p-3" value={form.status} onChange={(e) => setField("status", e.target.value)}>
-              {STATUSES.map((s) => <option key={s}>{s}</option>)}
-            </select>
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Email"
-              value={form.email}
-              onChange={(e) => setField("email", e.target.value)}
-            />
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Telefon"
-              value={form.telefon}
-              onChange={(e) => setField("telefon", e.target.value)}
-            />
-            <input
-              className="rounded-xl border p-3"
-              placeholder="LinkedIn URL"
-              value={form.linkedin}
-              onChange={(e) => setField("linkedin", e.target.value)}
-            />
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Lokalizacja / miasto"
-              value={form.lokalizacja}
-              onChange={(e) => setField("lokalizacja", e.target.value)}
-            />
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Doświadczenie, np. 5 lat"
-              value={form.doświadczenie}
-              onChange={(e) => setField("doświadczenie", e.target.value)}
-            />
-            <div className="relative">
-              <input
-                className="rounded-xl border p-3 w-full"
-                placeholder="Język programowania, np. Java, Python"
-                value={form.jezyk_programowania}
-                onChange={(e) => setField("jezyk_programowania", e.target.value)}
-              />
-              {form.jezyk_programowania && (
-                <div className="absolute z-10 mt-1 w-full rounded-xl border bg-white shadow">
-                  {suggestions.languages
-                    .filter((l) => l.toLowerCase().includes(form.jezyk_programowania.toLowerCase()))
-                    .map((l) => (
-                      <div
-                        key={l}
-                        onClick={() => setField("jezyk_programowania", l)}
-                        className="cursor-pointer px-3 py-2 hover:bg-slate-100"
-                      >
-                        {l}
-                      </div>
-                    ))}
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <input
+                  className="rounded-xl border p-3"
+                  placeholder="Imię i nazwisko"
+                  value={form.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                />
+                <select className="rounded-xl border p-3" value={form.status} onChange={(e) => setField("status", e.target.value)}>
+                  {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                </select>
+                <input className="rounded-xl border p-3" placeholder="Email" value={form.email} onChange={(e) => setField("email", e.target.value)} />
+                <input className="rounded-xl border p-3" placeholder="Telefon" value={form.telefon} onChange={(e) => setField("telefon", e.target.value)} />
+                <input className="rounded-xl border p-3" placeholder="LinkedIn URL" value={form.linkedin} onChange={(e) => setField("linkedin", e.target.value)} />
+                <input className="rounded-xl border p-3" placeholder="Lokalizacja / miasto" value={form.lokalizacja} onChange={(e) => setField("lokalizacja", e.target.value)} />
+                <input className="rounded-xl border p-3" placeholder="Doświadczenie, np. 5 lat" value={form.doświadczenie} onChange={(e) => setField("doświadczenie", e.target.value)} />
+                <input className="rounded-xl border p-3" placeholder="Język programowania, np. Java, Python" value={form.jezyk_programowania} onChange={(e) => setField("jezyk_programowania", e.target.value)} />
+                <input className="rounded-xl border p-3" placeholder="Framework, np. React, Spring, Django" value={form.framework} onChange={(e) => setField("framework", e.target.value)} />
+                <select className="rounded-xl border p-3" value={form.obszar} onChange={(e) => setField("obszar", e.target.value)}>
+                  <option value="">Obszar: wybierz</option>
+                  <option value="Frontend">Frontend</option>
+                  <option value="Backend">Backend</option>
+                  <option value="Fullstack">Fullstack</option>
+                  <option value="DevOps / SRE">DevOps / SRE</option>
+                  <option value="Data">Data</option>
+                  <option value="Mobile">Mobile</option>
+                  <option value="QA">QA</option>
+                  <option value="Product / PO">Product / PO</option>
+                  <option value="Sales / Nieruchomości">Sales / Nieruchomości</option>
+                  <option value="Inne">Inne</option>
+                </select>
+                <input className="rounded-xl border p-3 lg:col-span-3" placeholder="Tagi, np. Senior, Remote, Warsaw" value={form.tagi} onChange={(e) => setField("tagi", e.target.value)} />
+                <textarea className="min-h-24 rounded-xl border p-3 lg:col-span-2" placeholder="Notatki" value={form.notatki} onChange={(e) => setField("notatki", e.target.value)} />
+                <div className="lg:col-span-3">
+                  <label className="mb-1 block text-sm font-semibold">CV (PDF)</label>
+                  <input type="file" accept=".pdf" onChange={(e) => setField("cv_file", e.target.files[0])} className="w-full rounded-xl border p-2" />
                 </div>
-              )}
-            </div>
-            <div className="relative">
-              <input
-                className="rounded-xl border p-3 w-full"
-                placeholder="Framework, np. React, Spring, Django"
-                value={form.framework}
-                onChange={(e) => setField("framework", e.target.value)}
-              />
-              {form.framework && (
-                <div className="absolute z-10 mt-1 w-full rounded-xl border bg-white shadow">
-                  {suggestions.frameworks
-                    .filter((f) => f.toLowerCase().includes(form.framework.toLowerCase()))
-                    .map((f) => (
-                      <div
-                        key={f}
-                        onClick={() => setField("framework", f)}
-                        className="cursor-pointer px-3 py-2 hover:bg-slate-100"
-                      >
-                        {f}
-                      </div>
-                    ))}
+                <div className="lg:col-span-3">
+                  <label className="mb-1 block text-sm font-semibold">Dodaj do projektów</label>
+                  <div className="flex flex-wrap gap-2">
+                    {projects.map((p) => {
+                      const selected = formProjects.includes(p.id);
+                      return (
+                        <button key={p.id} type="button" onClick={() => setFormProjects((prev) => selected ? prev.filter((id) => id !== p.id) : [...prev, p.id])} className={`rounded-full px-3 py-1 text-sm font-bold border ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}>
+                          {p.name || p.nazwa}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              )}
-            </div>
-            <select
-              className="rounded-xl border p-3"
-              value={form.obszar}
-              onChange={(e) => setField("obszar", e.target.value)}
-            >
-              <option value="">Obszar: wybierz</option>
-              <option value="Frontend">Frontend</option>
-              <option value="Backend">Backend</option>
-              <option value="Fullstack">Fullstack</option>
-              <option value="DevOps / SRE">DevOps / SRE</option>
-              <option value="Data">Data</option>
-              <option value="Mobile">Mobile</option>
-              <option value="QA">QA</option>
-              <option value="Product / PO">Product / PO</option>
-              <option value="Sales / Nieruchomości">Sales / Nieruchomości</option>
-              <option value="Inne">Inne</option>
-            </select>
-            <input
-              className="rounded-xl border p-3 lg:col-span-3"
-              placeholder="Tagi, np. Senior, Remote, Warsaw"
-              value={form.tagi}
-              onChange={(e) => setField("tagi", e.target.value)}
-            />
-            <textarea
-              className="min-h-24 rounded-xl border p-3 lg:col-span-2"
-              placeholder="Notatki"
-              value={form.notatki}
-              onChange={(e) => setField("notatki", e.target.value)}
-            />
-
-            {/* 🔥 CV UPLOAD */}
-            <div className="lg:col-span-3">
-              <label className="mb-1 block text-sm font-semibold">CV (PDF)</label>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={(e) => setField("cv_file", e.target.files[0])}
-                className="w-full rounded-xl border p-2"
-              />
-            </div>
-
-            {/* 🔥 WYBÓR PROJEKTÓW PRZY DODAWANIU */}
-            <div className="lg:col-span-3">
-              <label className="mb-1 block text-sm font-semibold">Dodaj do projektów</label>
-              <div className="flex flex-wrap gap-2">
-                {projects.map((p) => {
-                  const selected = formProjects.includes(p.id);
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setFormProjects((prev) =>
-                          selected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
-                        );
-                      }}
-                      className={`rounded-full px-3 py-1 text-sm font-bold border ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}
-                    >
-                      {p.name || p.nazwa}
-                    </button>
-                  );
-                })}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">Ocena:</span>
+                  {[1,2,3,4,5].map((r) => (
+                    <button key={r} onClick={() => setField("rating", r)} className={`text-lg ${form.rating >= r ? "text-yellow-500" : "text-slate-300"}`}>★</button>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold">Ocena:</span>
-              {[1,2,3,4,5].map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setField("rating", r)}
-                  className={`text-lg ${form.rating >= r ? "text-yellow-500" : "text-slate-300"}`}
-                >
-                  ★
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-col gap-2 md:flex-row">
-            <button onClick={addCandidate} className="w-full rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white hover:bg-slate-800 md:w-auto">
-              {editingId ? "Zapisz zmiany" : "Dodaj kandydata"}
-            </button>
-            {editingId && (
-              <button onClick={cancelEditCandidate} className="w-full rounded-xl border px-5 py-3 font-semibold hover:bg-slate-50 md:w-auto">
-                Anuluj edycję
-              </button>
-            )}
-          </div>
-
-          {message && <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
-        </section>
-
-        <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2 text-lg font-bold">📁 Projekty</div>
-
-          <div className="flex gap-2">
-            <input
-              className="w-full rounded-xl border p-3"
-              placeholder="Nazwa projektu"
-              value={newProjectName}
-              onChange={(e) => setNewProjectName(e.target.value)}
-            />
-            <button
-              onClick={addProject}
-              className="rounded-xl bg-green-600 px-4 py-2 font-bold text-white hover:bg-green-700"
-            >
-              Dodaj projekt
-            </button>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {projects.map((p) => (
-              <div key={p.id} className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold">
-                <button
-                  onClick={() => setProjectFilter(p.id)}
-                  className="hover:text-blue-700 hover:underline"
-                  title="Filtruj po projekcie"
-                >
-                  {p.name || p.nazwa || "Projekt"}
-                </button>
-                {!clientView && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const link = `${window.location.origin}?client=true&project=${p.id}`;
-                      navigator.clipboard.writeText(link);
-                      setMessage(`Link klienta do projektu „${p.name || p.nazwa || "Projekt"}” skopiowany 📎`);
-                    }}
-                    className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-blue-700"
-                    title="Skopiuj link klienta tylko do tego projektu"
-                  >
-                    link
-                  </button>
-                )}
+              <div className="mt-4 flex flex-col gap-2 md:flex-row">
+                <button onClick={addCandidate} className="w-full rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white hover:bg-slate-800 md:w-auto">{editingId ? "Zapisz zmiany" : "Dodaj kandydata"}</button>
+                {editingId && <button onClick={cancelEditCandidate} className="w-full rounded-xl border px-5 py-3 font-semibold hover:bg-slate-50 md:w-auto">Anuluj edycję</button>}
               </div>
-            ))}
-          </div>
-        </section>
+              {message && <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{message}</p>}
+            </section>
 
-        <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2 text-lg font-bold"><Icon>🔎</Icon> Wyszukiwarka</div>
-          <input
-            className="w-full rounded-xl border p-3"
-            placeholder="Szukaj po nazwisku, statusie, emailu, telefonie, lokalizacji, doświadczeniu lub notatkach..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+            <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2 text-lg font-bold">📁 Projekty</div>
+              <div className="flex gap-2">
+                <input className="w-full rounded-xl border p-3" placeholder="Nazwa projektu" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
+                <button onClick={addProject} className="rounded-xl bg-green-600 px-4 py-2 font-bold text-white hover:bg-green-700">Dodaj projekt</button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {projects.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold">
+                    <button onClick={() => setProjectFilter(p.id)} className="hover:text-blue-700 hover:underline" title="Filtruj po projekcie">{p.name || p.nazwa || "Projekt"}</button>
+                    <button type="button" onClick={() => { const link = `${window.location.origin}?client=true&project=${p.id}`; navigator.clipboard.writeText(link); setMessage(`Link klienta do projektu „${p.name || p.nazwa || "Projekt"}” skopiowany 📎`); }} className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-blue-700" title="Skopiuj link klienta tylko do tego projektu">link</button>
+                  </div>
+                ))}
+              </div>
+            </section>
 
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <div className="relative">
-              <input
-                className="w-full rounded-xl border p-3"
-                placeholder="Język, np. Java / Python"
-                value={languageFilter}
-                onChange={(e) => setLanguageFilter(e.target.value)}
-              />
-              {languageFilter && (
-                <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border bg-white shadow">
-                  {suggestions.languages
-                    .filter((l) => l.toLowerCase().includes(languageFilter.toLowerCase()))
-                    .slice(0, 8)
-                    .map((l) => (
-                      <div
-                        key={l}
-                        onClick={() => setLanguageFilter(l)}
-                        className="cursor-pointer px-3 py-2 text-sm hover:bg-slate-100"
-                      >
-                        {l}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-            <div className="relative">
-              <input
-                className="w-full rounded-xl border p-3"
-                placeholder="Framework, np. React / Spring"
-                value={frameworkFilter}
-                onChange={(e) => setFrameworkFilter(e.target.value)}
-              />
-              {frameworkFilter && (
-                <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border bg-white shadow">
-                  {suggestions.frameworks
-                    .filter((f) => f.toLowerCase().includes(frameworkFilter.toLowerCase()))
-                    .slice(0, 8)
-                    .map((f) => (
-                      <div
-                        key={f}
-                        onClick={() => setFrameworkFilter(f)}
-                        className="cursor-pointer px-3 py-2 text-sm hover:bg-slate-100"
-                      >
-                        {f}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-            <select
-              className="rounded-xl border p-3"
-              value={areaFilter}
-              onChange={(e) => setAreaFilter(e.target.value)}
-            >
-              <option value="">Obszar: wszystkie</option>
-              <option value="Frontend">Frontend</option>
-              <option value="Backend">Backend</option>
-              <option value="Fullstack">Fullstack</option>
-              <option value="DevOps / SRE">DevOps / SRE</option>
-              <option value="Data">Data</option>
-              <option value="Mobile">Mobile</option>
-              <option value="QA">QA</option>
-              <option value="Product / PO">Product / PO</option>
-              <option value="Sales / Nieruchomości">Sales / Nieruchomości</option>
-              <option value="Inne">Inne</option>
-            </select>
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Tag, np. React / Senior / Remote"
-              value={tagFilter}
-              onChange={(e) => setTagFilter(e.target.value)}
-            />
-            <select
-              className="rounded-xl border p-3"
-              value={globalStatusFilter}
-              onChange={(e) => setGlobalStatusFilter(e.target.value)}
-            >
-              <option value="">Status kandydata: wszystkie</option>
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2 text-lg font-bold"><Icon>🔎</Icon> Wyszukiwarka</div>
+              <input className="w-full rounded-xl border p-3" placeholder="Szukaj po nazwisku, statusie, emailu, telefonie, lokalizacji, doświadczeniu lub notatkach..." value={query} onChange={(e) => setQuery(e.target.value)} />
+            </section>
 
-            <select
-              className="rounded-xl border p-3"
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
-            >
-              <option value="">Projekt: wszystkie</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>{p.name || p.nazwa || "Projekt bez nazwy"}</option>
-              ))}
-            </select>
-
-            <select
-              className="rounded-xl border p-3"
-              value={projectStatusFilter}
-              onChange={(e) => setProjectStatusFilter(e.target.value)}
-            >
-              <option value="">Status w projekcie: wszystkie</option>
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-        </section>
-
-        <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center gap-2 text-lg font-bold">↕️ Sortowanie</div>
-          <select
-            className="w-full rounded-xl border p-3 md:w-80"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-          >
-            <option value="newest">Najnowsi pierwsi</option>
-            <option value="oldest">Najstarsi pierwsi</option>
-            <option value="rating_desc">Najwyższa ocena</option>
-            <option value="rating_asc">Najniższa ocena</option>
-            <option value="experience_desc">Największe doświadczenie</option>
-            <option value="experience_asc">Najmniejsze doświadczenie</option>
-            <option value="name_asc">Imię/Nazwisko A-Z</option>
-            <option value="name_desc">Imię/Nazwisko Z-A</option>
-          </select>
-        </section>
+            <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center gap-2 text-lg font-bold">↕️ Sortowanie</div>
+              <select className="w-full rounded-xl border p-3 md:w-80" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="newest">Najnowsi pierwsi</option>
+                <option value="oldest">Najstarsi pierwsi</option>
+                <option value="rating_desc">Najwyższa ocena</option>
+                <option value="rating_asc">Najniższa ocena</option>
+                <option value="experience_desc">Największe doświadczenie</option>
+                <option value="experience_asc">Najmniejsze doświadczenie</option>
+                <option value="name_asc">Imię/Nazwisko A-Z</option>
+                <option value="name_desc">Imię/Nazwisko Z-A</option>
+              </select>
+            </section>
+          </>
+        )}
 
         <div className="mb-4 flex items-center justify-between gap-3">
           <label className="flex items-center gap-2 text-sm font-semibold">
