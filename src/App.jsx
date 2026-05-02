@@ -931,10 +931,67 @@ export default function MiniATSApp() {
                 </div>
 
                 {!clientView && (
+                <>
                 <div className="mt-4">
                   <label className="mb-2 block text-sm font-semibold text-slate-700">Status procesu</label>
                   <select
                     className={`w-full rounded-2xl border p-3 font-semibold shadow-sm ${getStatusStyle(candidate.status || "New")}`}
+                    value={candidate.status || "New"}
+                    onChange={(e) => updateStatus(candidate.id, e.target.value)}
+                  >
+                    {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <label className="mb-2 block text-sm font-bold text-slate-800">Projekty kandydata</label>
+
+                  <div className="mb-3 grid gap-2">
+                    {candidate.candidate_projects?.length ? (
+                      candidate.candidate_projects.map((cp) => (
+                        <div key={cp.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <button
+                              onClick={() => setProjectFilter(cp.project_id)}
+                              className="font-bold text-slate-800 hover:text-blue-700 hover:underline"
+                            >
+                              {cp.Projekty?.name || cp.Projekty?.nazwa || "Projekt"}
+                            </button>
+                            <button
+                              onClick={() => removeCandidateFromProject(cp.id)}
+                              className="rounded-full px-2 text-lg font-black text-slate-400 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          <select
+                            className={`w-full rounded-xl border p-2 text-sm font-semibold ${getStatusStyle(cp.status || "New")}`}
+                            value={cp.status || "New"}
+                            onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
+                          >
+                            {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                          </select>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-sm text-slate-400">Brak projektu</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => startEditCandidate(candidate)} className="rounded-2xl border px-4 py-2 text-sm font-bold">
+                      Edytuj
+                    </button>
+                    <button onClick={() => deleteCandidate(candidate.id)} className="rounded-2xl border px-4 py-2 text-sm font-bold text-red-600">
+                      Usuń
+                    </button>
+                  </div>
+                </div>
+                </>
+                )}`}
                     value={candidate.status || "New"}
                     onChange={(e) => updateStatus(candidate.id, e.target.value)}
                   >
