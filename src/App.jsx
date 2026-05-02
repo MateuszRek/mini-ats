@@ -881,10 +881,12 @@ export default function MiniATSApp() {
                       </div>
                     </div>
                   </div>
-                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-bold shadow-sm ${getStatusStyle(candidate.status || "New")}`}>
-                    <span className="h-2 w-2 rounded-full bg-current" />
-                    {candidate.status || "New"}
-                  </span>
+                  {!clientView && (
+                    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-bold shadow-sm ${getStatusStyle(candidate.status || "New")}`}>
+                      <span className="h-2 w-2 rounded-full bg-current" />
+                      {candidate.status || "New"}
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-5 grid gap-3 rounded-2xl bg-slate-50/80 p-4 text-sm text-slate-700">
@@ -928,6 +930,7 @@ export default function MiniATSApp() {
                   )}
                 </div>
 
+                {!clientView && (
                 <div className="mt-4">
                   <label className="mb-2 block text-sm font-semibold text-slate-700">Status procesu</label>
                   <select
@@ -938,7 +941,9 @@ export default function MiniATSApp() {
                     {STATUSES.map((s) => <option key={s}>{s}</option>)}
                   </select>
                 </div>
+                )}
 
+                {!clientView && (
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
                   <label className="mb-2 block text-sm font-bold text-slate-800">Projekty kandydata</label>
 
@@ -1004,6 +1009,7 @@ export default function MiniATSApp() {
                   </div>
                 </div>
 
+                {!clientView && (
                 <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => startEditCandidate(candidate)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold shadow-sm hover:bg-slate-50">
@@ -1015,6 +1021,7 @@ export default function MiniATSApp() {
                   </div>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-400">ID: {candidate.id?.slice(0, 6)}</span>
                 </div>
+                )}
               </div>
             </div>
           ))}
