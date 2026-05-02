@@ -861,26 +861,32 @@ export default function MiniATSApp() {
 
               <div className="p-5">
                 <div className="flex items-start justify-between gap-4">
-                  <button
-                    onClick={() => toggleFavorite(candidate)}
-                    className={`text-2xl ${candidate.favorite ? "text-yellow-400" : "text-slate-300 hover:text-yellow-400"}`}
-                    title="Dodaj do shortlisty"
-                  >
-                    ★
-                  </button>
-                  <div>
+                  {!clientView && (
+                    <button
+                      onClick={() => toggleFavorite(candidate)}
+                      className={`text-2xl ${candidate.favorite ? "text-yellow-400" : "text-slate-300 hover:text-yellow-400"}`}
+                      title="Dodaj do shortlisty"
+                    >
+                      ★
+                    </button>
+                  )}
+
+                  <div className="flex-1">
                     <div className="flex items-center gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-sm ${getAccentStyle(candidate.status || "New")}`}>
                         👤
                       </div>
                       <div>
                         <h3 className="text-xl font-black tracking-tight text-slate-900">{candidate.name}</h3>
-                        <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">
-                          Dodany: {candidate.created_at ? new Date(candidate.created_at).toLocaleString("pl-PL") : "brak daty"}
-                        </p>
+                        {!clientView && (
+                          <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                            Dodany: {candidate.created_at ? new Date(candidate.created_at).toLocaleString("pl-PL") : "brak daty"}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
+
                   {!clientView && (
                     <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-bold shadow-sm ${getStatusStyle(candidate.status || "New")}`}>
                       <span className="h-2 w-2 rounded-full bg-current" />
@@ -896,9 +902,7 @@ export default function MiniATSApp() {
                   {candidate.lokalizacja && <p><b>Lokalizacja:</b> {candidate.lokalizacja}</p>}
                   {candidate.doświadczenie && <p><b>Doświadczenie:</b> {candidate.doświadczenie}</p>}
                   {candidate.obszar && <p><b>Obszar:</b> {candidate.obszar}</p>}
-                  {candidate.rating > 0 && (
-                    <p><b>Ocena:</b> {'★'.repeat(candidate.rating)}</p>
-                  )}
+                  {candidate.rating > 0 && <p><b>Ocena:</b> {'★'.repeat(candidate.rating)}</p>}
                   {candidate.jezyk_programowania && <p><b>Język programowania:</b> {candidate.jezyk_programowania}</p>}
                   {candidate.framework && <p><b>Framework:</b> {candidate.framework}</p>}
                   {candidate.tagi && (
@@ -906,16 +910,16 @@ export default function MiniATSApp() {
                       {candidate.tagi.split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => (
                         <button
                           key={tag}
-                          onClick={() => setTagFilter(tag)}
-                          className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 hover:text-indigo-900"
-                          title="Filtruj po tagu"
+                          onClick={() => !clientView && setTagFilter(tag)}
+                          className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700"
+                          title={clientView ? "Tag" : "Filtruj po tagu"}
                         >
                           #{tag}
                         </button>
                       ))}
                     </div>
                   )}
-                  {candidate.notatki && <p className="rounded-2xl bg-white p-3 shadow-sm"><b>Notatki:</b> {candidate.notatki}</p>}
+                  {!clientView && candidate.notatki && <p className="rounded-2xl bg-white p-3 shadow-sm"><b>Notatki:</b> {candidate.notatki}</p>}
                   {candidate.cv_url && (
                     <p>
                       <b>CV:</b>{" "}
@@ -931,153 +935,95 @@ export default function MiniATSApp() {
                 </div>
 
                 {!clientView && (
-                <>
-                <div className="mt-4">
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Status procesu</label>
-                  <select
-                    className={`w-full rounded-2xl border p-3 font-semibold shadow-sm ${getStatusStyle(candidate.status || "New")}`}
-                    value={candidate.status || "New"}
-                    onChange={(e) => updateStatus(candidate.id, e.target.value)}
-                  >
-                    {STATUSES.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
+                  <>
+                    <div className="mt-4">
+                      <label className="mb-2 block text-sm font-semibold text-slate-700">Status procesu</label>
+                      <select
+                        className={`w-full rounded-2xl border p-3 font-semibold shadow-sm ${getStatusStyle(candidate.status || "New")}`}
+                        value={candidate.status || "New"}
+                        onChange={(e) => updateStatus(candidate.id, e.target.value)}
+                      >
+                        {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </div>
 
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                  <label className="mb-2 block text-sm font-bold text-slate-800">Projekty kandydata</label>
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                      <label className="mb-2 block text-sm font-bold text-slate-800">Projekty kandydata</label>
 
-                  <div className="mb-3 grid gap-2">
-                    {candidate.candidate_projects?.length ? (
-                      candidate.candidate_projects.map((cp) => (
-                        <div key={cp.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <button
-                              onClick={() => setProjectFilter(cp.project_id)}
-                              className="font-bold text-slate-800 hover:text-blue-700 hover:underline"
-                            >
-                              {cp.Projekty?.name || cp.Projekty?.nazwa || "Projekt"}
-                            </button>
-                            <button
-                              onClick={() => removeCandidateFromProject(cp.id)}
-                              className="rounded-full px-2 text-lg font-black text-slate-400 hover:text-red-600"
-                            >
-                              ×
-                            </button>
-                          </div>
+                      <div className="mb-3 grid gap-2">
+                        {candidate.candidate_projects?.length ? (
+                          candidate.candidate_projects.map((cp) => (
+                            <div key={cp.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <button
+                                  onClick={() => setProjectFilter(cp.project_id)}
+                                  className="font-bold text-slate-800 hover:text-blue-700 hover:underline"
+                                  title="Filtruj po tym projekcie"
+                                >
+                                  {cp.Projekty?.name || cp.Projekty?.nazwa || "Projekt bez nazwy"}
+                                </button>
+                                <button
+                                  onClick={() => removeCandidateFromProject(cp.id)}
+                                  className="rounded-full px-2 text-lg font-black text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                  title="Usuń projekt z kandydata"
+                                >
+                                  ×
+                                </button>
+                              </div>
 
-                          <select
-                            className={`w-full rounded-xl border p-2 text-sm font-semibold ${getStatusStyle(cp.status || "New")}`}
-                            value={cp.status || "New"}
-                            onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
-                          >
-                            {STATUSES.map((s) => <option key={s}>{s}</option>)}
-                          </select>
-                        </div>
-                      ))
-                    ) : (
-                      <span className="text-sm text-slate-400">Brak projektu</span>
-                    )}
-                  </div>
-                </div>
+                              <select
+                                className={`w-full rounded-xl border p-2 text-sm font-semibold ${getStatusStyle(cp.status || "New")}`}
+                                value={cp.status || "New"}
+                                onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
+                              >
+                                {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                              </select>
 
-                <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => startEditCandidate(candidate)} className="rounded-2xl border px-4 py-2 text-sm font-bold">
-                      Edytuj
-                    </button>
-                    <button onClick={() => deleteCandidate(candidate.id)} className="rounded-2xl border px-4 py-2 text-sm font-bold text-red-600">
-                      Usuń
-                    </button>
-                  </div>
-                </div>
-                </>
-                )}`}
-                    value={candidate.status || "New"}
-                    onChange={(e) => updateStatus(candidate.id, e.target.value)}
-                  >
-                    {STATUSES.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
-                )}
+                              <textarea
+                                className="mt-2 w-full rounded-xl border p-2 text-sm"
+                                placeholder="Notatki do tego projektu..."
+                                defaultValue={cp.notes || ""}
+                                onBlur={(e) => updateProjectNotes(cp.id, e.target.value)}
+                              />
+                            </div>
+                          ))
+                        ) : (
+                          <span className="text-sm text-slate-400">Brak przypisanego projektu</span>
+                        )}
+                      </div>
 
-                {!clientView && (
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                  <label className="mb-2 block text-sm font-bold text-slate-800">Projekty kandydata</label>
+                      <div className="flex gap-2">
+                        <select
+                          className="w-full rounded-xl border p-2"
+                          value={selectedProjects[candidate.id] || ""}
+                          onChange={(e) => setSelectedProjects((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+                        >
+                          <option value="">Wybierz projekt</option>
+                          {projects.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name || p.nazwa || "Projekt bez nazwy"}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => assignProject(candidate.id)}
+                          className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
+                        >
+                          Przypisz
+                        </button>
+                      </div>
+                    </div>
 
-                  <div className="mb-3 grid gap-2">
-                    {candidate.candidate_projects?.length ? (
-                      candidate.candidate_projects.map((cp) => (
-                        <div key={cp.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <button
-                              onClick={() => setProjectFilter(cp.project_id)}
-                              className="font-bold text-slate-800 hover:text-blue-700 hover:underline"
-                              title="Filtruj po tym projekcie"
-                            >
-                              {cp.Projekty?.name || cp.Projekty?.nazwa || "Projekt bez nazwy"}
-                            </button>
-                            <button
-                              onClick={() => removeCandidateFromProject(cp.id)}
-                              className="rounded-full px-2 text-lg font-black text-slate-400 hover:bg-red-50 hover:text-red-600"
-                              title="Usuń projekt z kandydata"
-                            >
-                              ×
-                            </button>
-                          </div>
-
-                          <select
-                            className={`w-full rounded-xl border p-2 text-sm font-semibold ${getStatusStyle(cp.status || "New")}`}
-                            value={cp.status || "New"}
-                            onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
-                          >
-                            {STATUSES.map((s) => <option key={s}>{s}</option>)}
-                          </select>
-
-                          <textarea
-                            className="mt-2 w-full rounded-xl border p-2 text-sm"
-                            placeholder="Notatki do tego projektu..."
-                            defaultValue={cp.notes || ""}
-                            onBlur={(e) => updateProjectNotes(cp.id, e.target.value)}
-                          />
-                        </div>
-                      ))
-                    ) : (
-                      <span className="text-sm text-slate-400">Brak przypisanego projektu</span>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <select
-                      className="w-full rounded-xl border p-2"
-                      value={selectedProjects[candidate.id] || ""}
-                      onChange={(e) => setSelectedProjects((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
-                    >
-                      <option value="">Wybierz projekt</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name || p.nazwa || "Projekt bez nazwy"}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => assignProject(candidate.id)}
-                      className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700"
-                    >
-                      Przypisz
-                    </button>
-                  </div>
-                </div>
-
-                {!clientView && (
-                <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => startEditCandidate(candidate)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold shadow-sm hover:bg-slate-50">
-                      <Icon>✎</Icon> Edytuj
-                    </button>
-                    <button onClick={() => deleteCandidate(candidate.id)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold text-red-600 shadow-sm hover:bg-red-50">
-                      <Icon>🗑</Icon> Usuń
-                    </button>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-400">ID: {candidate.id?.slice(0, 6)}</span>
-                </div>
+                    <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => startEditCandidate(candidate)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold shadow-sm hover:bg-slate-50">
+                          <Icon>✎</Icon> Edytuj
+                        </button>
+                        <button onClick={() => deleteCandidate(candidate.id)} className="flex items-center gap-2 rounded-2xl border bg-white px-4 py-2 text-sm font-bold text-red-600 shadow-sm hover:bg-red-50">
+                          <Icon>🗑</Icon> Usuń
+                        </button>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-400">ID: {candidate.id?.slice(0, 6)}</span>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
