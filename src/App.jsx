@@ -121,6 +121,7 @@ export default function MiniATSApp() {
   const [authLoading, setAuthLoading] = useState(true);
   const [parsingCv, setParsingCv] = useState(false);
   const [parsingLinkedin, setParsingLinkedin] = useState(false);
+  const [draggedKanbanItem, setDraggedKanbanItem] = useState(null);
   const cvInputRef = useRef(null);
 
   const [suggestions, setSuggestions] = useState({ languages: [], frameworks: [] });
@@ -391,6 +392,37 @@ export default function MiniATSApp() {
     }
 
     setMessage("Status w projekcie zmieniony ✅");
+    fetchCandidates();
+  };
+
+  const handleKanbanDrop = async (newStatus) => {
+    if (!draggedKanbanItem?.relationId) return;
+
+    const relationId = draggedKanbanItem.relationId;
+    const oldStatus = draggedKanbanItem.status || "New";
+
+    setDraggedKanbanItem(null);
+
+    if (oldStatus === newStatus) return;
+
+    setCandidates((prev) =>
+      prev.map((candidate) => ({
+        ...candidate,
+        candidate_projects: candidate.candidate_projects?.map((cp) =>
+          cp.id === relationId ? { ...cp, status: newStatus } : cp
+        ),
+      }))
+    );
+
+    const { error } = await supabase.from("candidate_projects").update({ status: newStatus }).eq("id", relationId);
+
+    if (error) {
+      setMessage("Błąd przenoszenia kandydata: " + error.message);
+      fetchCandidates();
+      return;
+    }
+
+    setMessage(`Kandydat przeniesiony do: ${newStatus} ✅`);
     fetchCandidates();
   };
 
@@ -1011,28 +1043,86 @@ export default function MiniATSApp() {
       )}
 
       {viewMode === "kanban" && !loading && filtered.length > 0 && kanbanProjectId && (
-        <section className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          {STATUSES.map((status) => {
-            const statusCandidates = filtered.flatMap((c) => (c.candidate_projects || []).filter((cp) => cp.project_id === kanbanProjectId && (cp.status || "New") === status).map((cp) => ({ candidate: c, cp })));
-            return (
-              <div key={status} className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">
-                <div className={`mb-3 rounded-2xl border px-3 py-2 text-sm font-black ${getStatusStyle(status)}`}>{status} <span className="font-semibold opacity-70">({statusCandidates.length})</span></div>
-                <div className="grid gap-3">
-                  {statusCandidates.map(({ candidate, cp }) => (
-                    <div key={cp.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
-                      <div className="font-black text-slate-900">{candidate.name}</div>
-                      <div className="mt-1 text-xs text-slate-500">{candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}</div>
-                      {cp.notes && <div className="mt-2 rounded-xl bg-white p-2 text-xs text-slate-600">{cp.notes}</div>}
-                      <select className={`mt-3 w-full rounded-xl border p-2 text-xs font-bold ${getStatusStyle(cp.status || "New")}`} value={cp.status || "New"} onChange={(e) => updateProjectStatus(cp.id, e.target.value)}>
-                        {STATUSES.map((s) => <option key={s}>{s}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                  {statusCandidates.length === 0 && <div className="rounded-2xl border border-dashed p-4 text-center text-xs text-slate-400">Brak</div>}
+        <section className="mb-6 overflow-x-auto rounded-3xl bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black text-slate-900">Kanban projektu</h3>
+              <p className="text-sm text-slate-500">Przeciągnij kandydata do innej kolumny, żeby zmienić status w projekcie.</p>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">
+              Drag & drop
+            </div>
+          </div>
+
+          <div className="flex min-w-max gap-4 pb-2">
+            {STATUSES.map((status) => {
+              const statusCandidates = filtered.flatMap((c) =>
+                (c.candidate_projects || [])
+                  .filter((cp) => cp.project_id === kanbanProjectId && (cp.status || "New") === status)
+                  .map((cp) => ({ candidate: c, cp }))
+              );
+
+              const isDropTarget = draggedKanbanItem && draggedKanbanItem.status !== status;
+
+              return (
+                <div
+                  key={status}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => handleKanbanDrop(status)}
+                  className={`min-h-[520px] w-72 shrink-0 rounded-3xl border p-3 transition ${
+                    isDropTarget ? "border-blue-300 bg-blue-50/40" : "border-slate-200 bg-slate-50"
+                  }`}
+                >
+                  <div className={`sticky top-0 z-10 mb-3 rounded-2xl border px-3 py-2 text-sm font-black ${getStatusStyle(status)}`}>
+                    {status} <span className="font-semibold opacity-70">({statusCandidates.length})</span>
+                  </div>
+
+                  <div className="grid gap-3">
+                    {statusCandidates.map(({ candidate, cp }) => (
+                      <div
+                        key={cp.id}
+                        draggable
+                        onDragStart={() => setDraggedKanbanItem({ relationId: cp.id, status: cp.status || "New" })}
+                        onDragEnd={() => setDraggedKanbanItem(null)}
+                        className="cursor-grab rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:cursor-grabbing"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-black leading-tight text-slate-900">{candidate.name}</div>
+                            <div className="mt-1 text-xs text-slate-500">{candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}</div>
+                          </div>
+                          <span className="text-slate-300">☰</span>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          {candidate.jezyk_programowania && <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700">{candidate.jezyk_programowania}</span>}
+                          {candidate.framework && <span className="rounded-full bg-violet-50 px-2 py-1 text-[11px] font-bold text-violet-700">{candidate.framework}</span>}
+                          {candidate.rating > 0 && <span className="rounded-full bg-yellow-50 px-2 py-1 text-[11px] font-bold text-yellow-700">{'★'.repeat(candidate.rating)}</span>}
+                        </div>
+
+                        {cp.notes && <div className="mt-3 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">{cp.notes}</div>}
+
+                        <select
+                          className={`mt-3 w-full rounded-xl border p-2 text-xs font-bold ${getStatusStyle(cp.status || "New")}`}
+                          value={cp.status || "New"}
+                          onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+                    ))}
+
+                    {statusCandidates.length === 0 && (
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-6 text-center text-xs font-semibold text-slate-400">
+                        Upuść tutaj kandydata
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </section>
       )}
 
