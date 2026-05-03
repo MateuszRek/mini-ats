@@ -1013,7 +1013,7 @@ export default function MiniATSApp() {
                             </span>
                             {candidate.obszar && <span className="text-slate-500">• {candidate.obszar}</span>}
                           </div>
-                        )
+                        )}
                         {!clientView && (
                           <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">
                             Dodany: {candidate.created_at ? new Date(candidate.created_at).toLocaleString("pl-PL") : "brak daty"}
