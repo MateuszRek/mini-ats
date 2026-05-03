@@ -774,7 +774,7 @@ export default function MiniATSApp() {
   const CandidateCard = ({ candidate }) => (
     <div
       key={candidate.id}
-      onClick={() => clientView && setExpandedCandidateId((prev) => (prev === candidate.id ? null : candidate.id);})}
+      onClick={() => clientView && setExpandedCandidateId((prev) => (prev === candidate.id ? null : candidate.id))}
       className={`group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${clientView ? "cursor-pointer" : ""}`}
     >
       <div className={`h-2 bg-gradient-to-r ${getAccentStyle(candidate.status || "New")}`} />
@@ -1060,10 +1060,10 @@ export default function MiniATSApp() {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-black text-slate-900">Kanban projektu</h3>
-              <p className="text-sm text-slate-500">Przeciągnij kandydata do innej kolumny, żeby zmienić status w projekcie.</p>
+              <p className="text-sm text-slate-500">Zmieniaj status kandydata strzałkami albo listą wyboru.</p>
             </div>
             <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">
-              Drag & drop
+              Pipeline
             </div>
           </div>
 
@@ -1075,20 +1075,8 @@ export default function MiniATSApp() {
                   .map((cp) => ({ candidate: c, cp }))
               );
 
-              const isDropTarget = draggedKanbanItem && draggedKanbanItem.status !== status;
-
               return (
-                <div
-                  key={status}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                  }}
-                  onDrop={(e) => handleKanbanDrop(status, e)}
-                  className={`min-h-[480px] rounded-2xl border p-2 transition ${
-                    isDropTarget ? "border-blue-300 bg-blue-50/60" : "border-slate-200 bg-slate-50"
-                  }`}
-                >
+                <div key={status} className="min-h-[480px] rounded-2xl border border-slate-200 bg-slate-50 p-2">
                   <div className={`mb-2 rounded-xl border px-2 py-2 text-xs font-black ${getStatusStyle(status)}`}>
                     {status} <span className="font-semibold opacity-70">({statusCandidates.length})</span>
                   </div>
@@ -1100,36 +1088,75 @@ export default function MiniATSApp() {
                       const nextStatus = STATUSES[currentIndex + 1];
 
                       return (
-                      <div
-                        key={cp.id}
-                        className="cursor-pointer rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition hover:shadow-md"
-                      >
-                          {STATUSES.map((s) => <option key={s}>{s}</option>)}
-                        </select>
+                        <div key={cp.id} className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition hover:shadow-md">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-black leading-tight text-slate-900" title={candidate.name}>
+                              {candidate.name}
+                            </div>
+                            <div className="mt-1 truncate text-[11px] text-slate-500" title={candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}>
+                              {candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}
+                            </div>
+                          </div>
 
-                        <div className="mt-2 flex items-center justify-between gap-2">
-                          <button
-                            disabled={!prevStatus}
-                            onClick={() => prevStatus && updateProjectStatus(cp.id, prevStatus)}
-                            className="flex-1 rounded-lg bg-slate-200 py-1 text-xs font-bold disabled:opacity-30"
-                          >
-                            ←
-                          </button>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {candidate.jezyk_programowania && (
+                              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                                {candidate.jezyk_programowania}
+                              </span>
+                            )}
+                            {candidate.framework && (
+                              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                                {candidate.framework}
+                              </span>
+                            )}
+                            {candidate.rating > 0 && (
+                              <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-bold text-yellow-700">
+                                {"★".repeat(candidate.rating)}
+                              </span>
+                            )}
+                          </div>
 
-                          <button
-                            disabled={!nextStatus}
-                            onClick={() => nextStatus && updateProjectStatus(cp.id, nextStatus)}
-                            className="flex-1 rounded-lg bg-blue-600 py-1 text-xs font-bold text-white disabled:opacity-30"
+                          {cp.notes && (
+                            <div className="mt-2 line-clamp-2 rounded-lg bg-slate-50 p-1.5 text-[10px] text-slate-600">
+                              {cp.notes}
+                            </div>
+                          )}
+
+                          <select
+                            className={`mt-2 w-full rounded-lg border p-1.5 text-[11px] font-bold ${getStatusStyle(cp.status || "New")}`}
+                            value={cp.status || "New"}
+                            onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
                           >
-                            →
-                          </button>
+                            {STATUSES.map((s) => (
+                              <option key={s}>{s}</option>
+                            ))}
+                          </select>
+
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              disabled={!prevStatus}
+                              onClick={() => prevStatus && updateProjectStatus(cp.id, prevStatus)}
+                              className="flex-1 rounded-lg bg-slate-200 py-1 text-xs font-bold disabled:opacity-30"
+                            >
+                              ←
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!nextStatus}
+                              onClick={() => nextStatus && updateProjectStatus(cp.id, nextStatus)}
+                              className="flex-1 rounded-lg bg-blue-600 py-1 text-xs font-bold text-white disabled:opacity-30"
+                            >
+                              →
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {statusCandidates.length === 0 && (
                       <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 p-3 text-center text-[11px] font-semibold text-slate-400">
-                        Upuść tutaj
+                        Brak
                       </div>
                     )}
                   </div>
