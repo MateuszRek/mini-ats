@@ -49,6 +49,7 @@ const emptyCandidate = {
   rating: 0,
   cv_file: null,
   cv_url: "",
+  linkedin_text: "",
 };
 
 function getAccentStyle(status) {
@@ -119,6 +120,7 @@ export default function MiniATSApp() {
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
   const [parsingCv, setParsingCv] = useState(false);
+  const [parsingLinkedin, setParsingLinkedin] = useState(false);
   const cvInputRef = useRef(null);
 
   const [suggestions, setSuggestions] = useState({ languages: [], frameworks: [] });
@@ -144,6 +146,7 @@ export default function MiniATSApp() {
 
     const body = new FormData();
     body.append("file", form.cv_file);
+    body.append("source", "cv");
 
     try {
       const res = await fetch("/api/parse-cv", { method: "POST", body });
@@ -174,6 +177,56 @@ export default function MiniATSApp() {
       setMessage("Błąd połączenia z AI: " + error.message);
     } finally {
       setParsingCv(false);
+    }
+  };
+
+  const parseLinkedin = async () => {
+    if (!form.linkedin_text.trim() && !form.linkedin.trim()) {
+      setMessage("Wklej link LinkedIn albo tekst z profilu LinkedIn");
+      return;
+    }
+
+    setParsingLinkedin(true);
+    setMessage("AI przepisuje dane z LinkedIn...");
+
+    try {
+      const res = await fetch("/api/parse-cv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "linkedin",
+          linkedinUrl: form.linkedin,
+          linkedinText: form.linkedin_text,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        setMessage("Błąd AI LinkedIn: " + (result.error || "nieznany błąd"));
+        return;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        name: result.name || prev.name,
+        email: result.email || prev.email,
+        telefon: result.telefon || prev.telefon,
+        linkedin: result.linkedin || prev.linkedin,
+        lokalizacja: result.lokalizacja || prev.lokalizacja,
+        doświadczenie: result.doświadczenie || prev.doświadczenie,
+        jezyk_programowania: result.jezyk_programowania || prev.jezyk_programowania,
+        framework: result.framework || prev.framework,
+        obszar: result.obszar || prev.obszar,
+        tagi: result.tagi || prev.tagi,
+        notatki: result.notatki || prev.notatki,
+      }));
+
+      setMessage("Dane z LinkedIn uzupełnione ✅ Sprawdź je przed zapisem.");
+    } catch (error) {
+      setMessage("Błąd połączenia z AI LinkedIn: " + error.message);
+    } finally {
+      setParsingLinkedin(false);
     }
   };
 
@@ -503,6 +556,7 @@ export default function MiniATSApp() {
       email: candidate.email || "",
       telefon: candidate.telefon || "",
       linkedin: candidate.linkedin || "",
+      linkedin_text: "",
       lokalizacja: candidate.lokalizacja || "",
       doświadczenie: candidate.doświadczenie || "",
       notatki: candidate.notatki || "",
@@ -820,6 +874,24 @@ export default function MiniATSApp() {
         <input className="rounded-xl border p-3" placeholder="Email" value={form.email} onChange={(e) => setField("email", e.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Telefon" value={form.telefon} onChange={(e) => setField("telefon", e.target.value)} />
         <input className="rounded-xl border p-3" placeholder="LinkedIn URL" value={form.linkedin} onChange={(e) => setField("linkedin", e.target.value)} />
+        <div className="lg:col-span-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <label className="mb-2 block text-sm font-bold text-slate-800">LinkedIn — tekst profilu / About / Experience</label>
+          <textarea
+            className="min-h-28 w-full rounded-xl border p-3"
+            placeholder="Wklej tutaj tekst skopiowany z profilu LinkedIn, np. nagłówek, About, Experience, Skills..."
+            value={form.linkedin_text}
+            onChange={(e) => setField("linkedin_text", e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={parseLinkedin}
+            disabled={parsingLinkedin || (!form.linkedin_text.trim() && !form.linkedin.trim())}
+            className="mt-2 rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {parsingLinkedin ? "Przepisuję..." : "🤖 Przepisz z LinkedIn"}
+          </button>
+          <p className="mt-2 text-xs text-slate-500">AI uzupełni dane i doda do notatki krótką ocenę profilu kandydata.</p>
+        </div>
         <input className="rounded-xl border p-3" placeholder="Lokalizacja / miasto" value={form.lokalizacja} onChange={(e) => setField("lokalizacja", e.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Doświadczenie, np. 5 lat" value={form.doświadczenie} onChange={(e) => setField("doświadczenie", e.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Język programowania, np. Java, Python" value={form.jezyk_programowania} onChange={(e) => setField("jezyk_programowania", e.target.value)} list="language-suggestions" />
