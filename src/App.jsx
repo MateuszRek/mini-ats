@@ -774,7 +774,7 @@ export default function MiniATSApp() {
   const CandidateCard = ({ candidate }) => (
     <div
       key={candidate.id}
-      onClick={() => clientView && setExpandedCandidateId((prev) => (prev === candidate.id ? null : candidate.id))}
+      onClick={() => clientView && setExpandedCandidateId((prev) => (prev === candidate.id ? null : candidate.id);})}
       className={`group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${clientView ? "cursor-pointer" : ""}`}
     >
       <div className={`h-2 bg-gradient-to-r ${getAccentStyle(candidate.status || "New")}`} />
@@ -1094,47 +1094,36 @@ export default function MiniATSApp() {
                   </div>
 
                   <div className="grid gap-2">
-                    {statusCandidates.map(({ candidate, cp }) => (
+                    {statusCandidates.map(({ candidate, cp }) => {
+                      const currentIndex = STATUSES.indexOf(cp.status || "New");
+                      const prevStatus = STATUSES[currentIndex - 1];
+                      const nextStatus = STATUSES[currentIndex + 1];
+
+                      return (
                       <div
                         key={cp.id}
-                        draggable="true"
-                        onDragStart={(e) => {
-                          const item = { relationId: cp.id, status: cp.status || "New" };
-                          setDraggedKanbanItem(item);
-                          e.dataTransfer.effectAllowed = "move";
-                          e.dataTransfer.setData("application/json", JSON.stringify(item));
-                        }}
-                        onDragEnd={() => setDraggedKanbanItem(null)}
-                        className="cursor-move rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition hover:shadow-md"
+                        className="cursor-pointer rounded-xl border border-slate-200 bg-white p-2 shadow-sm transition hover:shadow-md"
                       >
-                        <div className="flex items-start justify-between gap-1">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-black leading-tight text-slate-900" title={candidate.name}>{candidate.name}</div>
-                            <div className="mt-1 truncate text-[11px] text-slate-500" title={candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}>
-                              {candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych"}
-                            </div>
-                          </div>
-                          <span className="shrink-0 text-slate-300">☰</span>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {candidate.jezyk_programowania && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">{candidate.jezyk_programowania}</span>}
-                          {candidate.framework && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">{candidate.framework}</span>}
-                          {candidate.rating > 0 && <span className="rounded-full bg-yellow-50 px-2 py-0.5 text-[10px] font-bold text-yellow-700">{'★'.repeat(candidate.rating)}</span>}
-                        </div>
-
-                        {cp.notes && <div className="mt-2 line-clamp-2 rounded-lg bg-slate-50 p-1.5 text-[10px] text-slate-600">{cp.notes}</div>}
-
-                        <select
-                          className={`mt-2 w-full rounded-lg border p-1.5 text-[11px] font-bold ${getStatusStyle(cp.status || "New")}`}
-                          value={cp.status || "New"}
-                          onChange={(e) => updateProjectStatus(cp.id, e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          draggable="false"
-                        >
                           {STATUSES.map((s) => <option key={s}>{s}</option>)}
                         </select>
+
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <button
+                            disabled={!prevStatus}
+                            onClick={() => prevStatus && updateProjectStatus(cp.id, prevStatus)}
+                            className="flex-1 rounded-lg bg-slate-200 py-1 text-xs font-bold disabled:opacity-30"
+                          >
+                            ←
+                          </button>
+
+                          <button
+                            disabled={!nextStatus}
+                            onClick={() => nextStatus && updateProjectStatus(cp.id, nextStatus)}
+                            className="flex-1 rounded-lg bg-blue-600 py-1 text-xs font-bold text-white disabled:opacity-30"
+                          >
+                            →
+                          </button>
+                        </div>
                       </div>
                     ))}
 
