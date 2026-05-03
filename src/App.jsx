@@ -93,10 +93,12 @@ export default function MiniATSApp() {
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [clientStatusFilter, setClientStatusFilter] = useState("");
   const [clientRatingFilter, setClientRatingFilter] = useState("");
+  const [expandedCandidateId, setExpandedCandidateId] = useState(null);
   const [session, setSession] = useState(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
+  const [parsingCv, setParsingCv] = useState(false);
 
   const clientProjectName = useMemo(() => {
     if (!clientProjectId) return "wybrany projekt";
@@ -111,6 +113,54 @@ export default function MiniATSApp() {
 
   const setField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const parseCv = async () => {
+    if (!form.cv_file) {
+      setMessage("Najpierw wybierz plik CV / zdjęcie CV");
+      return;
+    }
+
+    setParsingCv(true);
+    setMessage("AI przepisuje dane z CV...");
+
+    const body = new FormData();
+    body.append("file", form.cv_file);
+
+    try {
+      const res = await fetch("/api/parse-cv", {
+        method: "POST",
+        body,
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        setMessage("Błąd AI: " + (result.error || "nieznany błąd"));
+        return;
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        name: result.name || prev.name,
+        email: result.email || prev.email,
+        telefon: result.telefon || prev.telefon,
+        linkedin: result.linkedin || prev.linkedin,
+        lokalizacja: result.lokalizacja || prev.lokalizacja,
+        doświadczenie: result.doświadczenie || prev.doświadczenie,
+        jezyk_programowania: result.jezyk_programowania || prev.jezyk_programowania,
+        framework: result.framework || prev.framework,
+        obszar: result.obszar || prev.obszar,
+        tagi: result.tagi || prev.tagi,
+        notatki: result.notatki || prev.notatki,
+      }));
+
+      setMessage("Dane z CV uzupełnione ✅ Sprawdź je przed zapisem.");
+    } catch (error) {
+      setMessage("Błąd połączenia z AI: " + error.message);
+    } finally {
+      setParsingCv(false);
+    }
   };
 
   const login = async () => {
@@ -683,7 +733,20 @@ export default function MiniATSApp() {
                 <textarea className="min-h-24 rounded-xl border p-3 lg:col-span-2" placeholder="Notatki" value={form.notatki} onChange={(e) => setField("notatki", e.target.value)} />
                 <div className="lg:col-span-3">
                   <label className="mb-1 block text-sm font-semibold">CV (PDF)</label>
-                  <input type="file" accept=".pdf" onChange={(e) => setField("cv_file", e.target.files[0])} className="w-full rounded-xl border p-2" />
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) => setField("cv_file", e.target.files[0])}
+                    className="w-full rounded-xl border p-2"
+                  />
+                  <button
+                    type="button"
+                    onClick={parseCv}
+                    disabled={parsingCv || !form.cv_file}
+                    className="mt-2 rounded-xl bg-purple-600 px-4 py-2 font-bold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {parsingCv ? "Przepisuję..." : "🤖 Przepisz dane z CV"}
+                  </button>
                 </div>
                 <div className="lg:col-span-3">
                   <label className="mb-1 block text-sm font-semibold">Dodaj do projektów</label>
@@ -917,7 +980,11 @@ export default function MiniATSApp() {
 
         {viewMode === "list" && <main className="grid gap-4 lg:grid-cols-2">
           {filtered.map((candidate) => (
-            <div key={candidate.id} className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-xl">
+            <div
+              key={candidate.id}
+              onClick={() => clientView && setExpandedCandidateId((prev) => prev === candidate.id ? null : candidate.id)}
+              className={`group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-xl ${clientView ? "cursor-pointer" : ""}`}
+            >
               <div className={`h-2 bg-gradient-to-r ${getAccentStyle(candidate.status || "New")}`} />
 
               <div className="p-5">
@@ -939,6 +1006,14 @@ export default function MiniATSApp() {
                       </div>
                       <div>
                         <h3 className="text-xl font-black tracking-tight text-slate-900">{candidate.name}</h3>
+                        {clientView && (
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-bold text-yellow-500">
+                              {candidate.rating > 0 ? "★".repeat(candidate.rating) : "Brak oceny"}
+                            </span>
+                            {candidate.obszar && <span className="text-slate-500">• {candidate.obszar}</span>}
+                          </div>
+                        )
                         {!clientView && (
                           <p className="mt-0.5 text-xs font-medium uppercase tracking-wide text-slate-400">
                             Dodany: {candidate.created_at ? new Date(candidate.created_at).toLocaleString("pl-PL") : "brak daty"}
@@ -956,6 +1031,26 @@ export default function MiniATSApp() {
                   )}
                 </div>
 
+                {clientView && (
+                  <div className="mt-4 rounded-2xl bg-slate-50/80 p-4 text-sm text-slate-700">
+                    <div className="flex flex-wrap gap-2">
+                      {candidate.jezyk_programowania && (
+                        <span className="rounded-full bg-blue-50 px-3 py-1 font-bold text-blue-700">{candidate.jezyk_programowania}</span>
+                      )}
+                      {candidate.framework && (
+                        <span className="rounded-full bg-violet-50 px-3 py-1 font-bold text-violet-700">{candidate.framework}</span>
+                      )}
+                      {candidate.lokalizacja && (
+                        <span className="rounded-full bg-slate-100 px-3 py-1 font-bold text-slate-600">{candidate.lokalizacja}</span>
+                      )}
+                    </div>
+                    <p className="mt-3 text-xs font-semibold text-slate-400">
+                      {expandedCandidateId === candidate.id ? "Kliknij kartę, żeby ukryć szczegóły" : "Kliknij kartę, żeby zobaczyć więcej informacji"}
+                    </p>
+                  </div>
+                )}
+
+                {(!clientView || expandedCandidateId === candidate.id) && (
                 <div className="mt-5 grid gap-3 rounded-2xl bg-slate-50/80 p-4 text-sm text-slate-700">
                   {candidate.email && <p><b>Email:</b> {candidate.email}</p>}
                   {candidate.telefon && <p><b>Telefon:</b> {candidate.telefon}</p>}
@@ -986,7 +1081,10 @@ export default function MiniATSApp() {
                       <b>CV:</b>{" "}
                       <button
                         type="button"
-                        onClick={() => openCv(candidate.cv_url)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openCv(candidate.cv_url);
+                        }}
                         className="text-blue-600 font-semibold hover:underline"
                       >
                         Otwórz CV
@@ -994,6 +1092,7 @@ export default function MiniATSApp() {
                     </p>
                   )}
                 </div>
+                )}
 
                 {!clientView && (
                   <>
