@@ -766,6 +766,102 @@ export default function MiniATSApp() {
   const getProjectName = (project) => project?.name || project?.nazwa || "Projekt bez nazwy";
   const getClientName = (clientId) => clients.find((c) => c.id === clientId)?.name || "Bez klienta";
 
+  const downloadFile = (filename, content, type = "text/plain;charset=utf-8") => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const csvEscape = (value) => {
+    const safe = String(value ?? "").replace(/"/g, '""');
+    return `"${safe}"`;
+  };
+
+  const toCsv = (rows, headers) => {
+    const headerLine = headers.map((h) => csvEscape(h.label)).join(",");
+    const bodyLines = rows.map((row) => headers.map((h) => csvEscape(h.get(row))).join(","));
+    return [headerLine, ...bodyLines].join("
+");
+  };
+
+  const todayStamp = () => new Date().toISOString().slice(0, 10);
+
+  const exportCandidatesCsv = () => {
+    const csv = toCsv(candidates, [
+      { label: "ID", get: (c) => c.id },
+      { label: "Imię i nazwisko", get: (c) => c.name },
+      { label: "Status", get: (c) => c.status },
+      { label: "Email", get: (c) => c.email },
+      { label: "Telefon", get: (c) => c.telefon },
+      { label: "LinkedIn", get: (c) => c.linkedin },
+      { label: "Lokalizacja", get: (c) => c.lokalizacja },
+      { label: "Doświadczenie", get: (c) => c.doświadczenie },
+      { label: "Obszar", get: (c) => c.obszar },
+      { label: "Język programowania", get: (c) => c.jezyk_programowania },
+      { label: "Framework", get: (c) => c.framework },
+      { label: "Tagi", get: (c) => c.tagi },
+      { label: "Ocena", get: (c) => c.rating },
+      { label: "Shortlista", get: (c) => (c.favorite ? "TAK" : "NIE") },
+      { label: "Projekty", get: (c) => (c.candidate_projects || []).map((cp) => getProjectName(cp.Projekty)).join("; ") },
+      { label: "Statusy w projektach", get: (c) => (c.candidate_projects || []).map((cp) => `${getProjectName(cp.Projekty)}: ${cp.status || "New"}`).join("; ") },
+      { label: "Notatki projektowe", get: (c) => (c.candidate_projects || []).map((cp) => `${getProjectName(cp.Projekty)}: ${cp.notes || ""}`).join("; ") },
+      { label: "Notatki", get: (c) => c.notatki },
+      { label: "CV", get: (c) => c.cv_url },
+      { label: "Data dodania", get: (c) => c.created_at },
+    ]);
+
+    downloadFile(`mini-ats-kandydaci-${todayStamp()}.csv`, "﻿" + csv, "text/csv;charset=utf-8");
+    setMessage("Eksport kandydatów CSV pobrany ✅");
+  };
+
+  const exportProjectsCsv = () => {
+    const csv = toCsv(projects, [
+      { label: "ID", get: (p) => p.id },
+      { label: "Nazwa", get: (p) => getProjectName(p) },
+      { label: "Klient", get: (p) => getClientName(p.client_id) },
+      { label: "Liczba kandydatów", get: (p) => candidates.filter((c) => c.candidate_projects?.some((cp) => cp.project_id === p.id)).length },
+      { label: "Data dodania", get: (p) => p.created_at },
+    ]);
+
+    downloadFile(`mini-ats-projekty-${todayStamp()}.csv`, "﻿" + csv, "text/csv;charset=utf-8");
+    setMessage("Eksport projektów CSV pobrany ✅");
+  };
+
+  const exportClientsCsv = () => {
+    const csv = toCsv(clients, [
+      { label: "ID", get: (c) => c.id },
+      { label: "Nazwa", get: (c) => c.name },
+      { label: "Notatka", get: (c) => c.note },
+      { label: "Liczba projektów", get: (c) => projects.filter((p) => p.client_id === c.id).length },
+      { label: "Data dodania", get: (c) => c.created_at },
+    ]);
+
+    downloadFile(`mini-ats-klienci-${todayStamp()}.csv`, "﻿" + csv, "text/csv;charset=utf-8");
+    setMessage("Eksport klientów CSV pobrany ✅");
+  };
+
+  const exportFullBackup = () => {
+    const backup = {
+      exported_at: new Date().toISOString(),
+      candidates,
+      projects,
+      clients,
+    };
+
+    downloadFile(
+      `mini-ats-backup-${todayStamp()}.json`,
+      JSON.stringify(backup, null, 2),
+      "application/json;charset=utf-8"
+    );
+    setMessage("Pełny backup JSON pobrany ✅");
+  };
+
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-900">
@@ -1372,6 +1468,10 @@ export default function MiniATSApp() {
           </nav>
 
           <div className="mt-auto grid gap-2">
+            <button onClick={exportCandidatesCsv} className="rounded-2xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800">Eksport kandydatów CSV</button>
+            <button onClick={exportProjectsCsv} className="rounded-2xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800">Eksport projektów CSV</button>
+            <button onClick={exportClientsCsv} className="rounded-2xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800">Eksport klientów CSV</button>
+            <button onClick={exportFullBackup} className="rounded-2xl border border-emerald-800 px-4 py-3 text-sm font-semibold text-emerald-300 hover:bg-emerald-950">Backup JSON</button>
             <button onClick={refreshAll} className="rounded-2xl border border-slate-700 px-4 py-3 font-semibold text-slate-200 hover:bg-slate-800">Odśwież bazę</button>
             <button onClick={logout} className="rounded-2xl border border-red-900 px-4 py-3 font-semibold text-red-300 hover:bg-red-950">Wyloguj</button>
           </div>
