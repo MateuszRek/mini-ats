@@ -786,8 +786,7 @@ export default function MiniATSApp() {
   const toCsv = (rows, headers) => {
     const headerLine = headers.map((h) => csvEscape(h.label)).join(",");
     const bodyLines = rows.map((row) => headers.map((h) => csvEscape(h.get(row))).join(","));
-    return [headerLine, ...bodyLines].join("
-");
+    return [headerLine, ...bodyLines].join("\n");
   };
 
   const todayStamp = () => new Date().toISOString().slice(0, 10);
