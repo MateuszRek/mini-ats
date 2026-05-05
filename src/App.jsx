@@ -906,7 +906,7 @@ export default function MiniATSApp() {
                 </span>
               </button>
 
-              {openProjectSections[candidate.id] && (
+              {openProjectSections[candidate.id] && (<>
 
               <div className="mb-3 grid gap-2">
                 {candidate.candidate_projects?.length ? (
@@ -949,7 +949,7 @@ export default function MiniATSApp() {
                 </select>
                 <button onClick={() => assignProject(candidate.id)} className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">Przypisz</button>
               </div>
-              )}
+              </>)}
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
