@@ -115,7 +115,15 @@ export default function MiniATSApp() {
   const [clientStatusFilter, setClientStatusFilter] = useState("");
   const [clientRatingFilter, setClientRatingFilter] = useState("");
   const [expandedCandidateId, setExpandedCandidateId] = useState(null);
+  const [openProjectSections, setOpenProjectSections] = useState({});
   const [session, setSession] = useState(null);
+
+  const toggleProjectSection = (candidateId) => {
+    setOpenProjectSections((prev) => ({
+      ...prev,
+      [candidateId]: !prev[candidateId],
+    }));
+  };
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
@@ -887,7 +895,18 @@ export default function MiniATSApp() {
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-              <label className="mb-2 block text-sm font-bold text-slate-800">Projekty kandydata</label>
+              <button
+                type="button"
+                onClick={() => toggleProjectSection(candidate.id)}
+                className="flex w-full items-center justify-between text-left text-sm font-bold text-slate-800"
+              >
+                <span>Projekty kandydata / podsumowania rozmów</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+                  {openProjectSections[candidate.id] ? "Zwiń" : "Rozwiń"}
+                </span>
+              </button>
+
+              {openProjectSections[candidate.id] && (
 
               <div className="mb-3 grid gap-2">
                 {candidate.candidate_projects?.length ? (
@@ -904,7 +923,18 @@ export default function MiniATSApp() {
                         {STATUSES.map((s) => <option key={s}>{s}</option>)}
                       </select>
 
-                      <textarea className="mt-2 w-full rounded-xl border p-2 text-sm" placeholder="Notatki do tego projektu..." defaultValue={cp.notes || ""} onBlur={(e) => updateProjectNotes(cp.id, e.target.value)} />
+                      <details className="mt-2 rounded-xl border border-slate-200 bg-white p-2">
+                        <summary className="cursor-pointer text-sm font-bold text-slate-700">
+                          Podsumowanie rozmowy / notatka do projektu
+                        </summary>
+                        <textarea
+                          className="mt-2 min-h-28 w-full rounded-xl border p-2 text-sm"
+                          placeholder="Wklej tutaj podsumowanie rozmowy, kontekst, potrzeby, nastawienie, next step..."
+                          defaultValue={cp.notes || ""}
+                          onBlur={(e) => updateProjectNotes(cp.id, e.target.value)}
+                        />
+                        <p className="mt-1 text-xs text-slate-400">Zapisuje się po kliknięciu poza polem.</p>
+                      </details>
                     </div>
                   ))
                 ) : (
@@ -919,6 +949,7 @@ export default function MiniATSApp() {
                 </select>
                 <button onClick={() => assignProject(candidate.id)} className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">Przypisz</button>
               </div>
+              )}
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
