@@ -336,8 +336,33 @@ export default function MiniATSApp() {
 
     setNewProjectName("");
     setNewProjectClientId("");
+    setProjectSearch("");
     setMessage("Projekt dodany ✅");
     fetchProjects();
+  };
+
+  const deleteProject = async (projectId, projectName) => {
+    if (!confirm(`Czy na pewno chcesz usunąć projekt: ${projectName}? Kandydaci nie zostaną usunięci, tylko odpięci od projektu.`)) return;
+
+    const { error: relationsError } = await supabase.from("candidate_projects").delete().eq("project_id", projectId);
+
+    if (relationsError) {
+      setMessage("Nie udało się odpiąć kandydatów od projektu: " + relationsError.message);
+      return;
+    }
+
+    const { error } = await supabase.from("Projekty").delete().eq("id", projectId);
+
+    if (error) {
+      setMessage("Nie udało się usunąć projektu: " + error.message);
+      return;
+    }
+
+    setMessage("Projekt usunięty ✅");
+    if (projectFilter === projectId) setProjectFilter("");
+    if (kanbanProjectId === projectId) setKanbanProjectId("");
+    fetchProjects();
+    fetchCandidates();
   };
 
   const assignProject = async (candidateId) => {
@@ -1199,7 +1224,10 @@ export default function MiniATSApp() {
                   <p className="mt-1 text-sm text-slate-500">Klient: <b>{clientName}</b></p>
                   <p className="mt-1 text-sm text-slate-500">Kandydaci: <b>{projectCandidates.length}</b></p>
                 </div>
-                <button type="button" onClick={() => { const link = `${window.location.origin}?client=true&project=${p.id}`; navigator.clipboard.writeText(link); setMessage(`Link klienta do projektu „${getProjectName(p)}” skopiowany 📎`); }} className="rounded-full bg-blue-600 px-3 py-1 text-sm font-bold text-white hover:bg-blue-700">Skopiuj link klienta</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => { const link = `${window.location.origin}?client=true&project=${p.id}`; navigator.clipboard.writeText(link); setMessage(`Link klienta do projektu „${getProjectName(p)}” skopiowany 📎`); }} className="rounded-full bg-blue-600 px-3 py-1 text-sm font-bold text-white hover:bg-blue-700">Skopiuj link klienta</button>
+                  <button type="button" onClick={() => deleteProject(p.id, getProjectName(p))} className="rounded-full border border-red-200 bg-white px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-50">Usuń projekt</button>
+                </div>
               </div>
 
               <div className="mt-4 grid gap-2">
@@ -1343,10 +1371,10 @@ export default function MiniATSApp() {
 
             {message && <p className="mb-6 rounded-2xl bg-white p-4 text-sm font-semibold text-slate-700 shadow-sm">{message}</p>}
 
-            {activeTab === "add" && <AddCandidateView />}
-            {activeTab === "candidates" && <CandidatesView />}
-            {activeTab === "projects" && <ProjectsView />}
-            {activeTab === "clients" && <ClientsView />}
+            {activeTab === "add" && AddCandidateView()}
+            {activeTab === "candidates" && CandidatesView()}
+            {activeTab === "projects" && ProjectsView()}
+            {activeTab === "clients" && ClientsView()}
           </div>
         </main>
       </div>
