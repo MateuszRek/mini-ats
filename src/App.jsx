@@ -132,7 +132,7 @@ export default function MiniATSApp() {
   const [draggedKanbanItem, setDraggedKanbanItem] = useState(null);
   const cvInputRef = useRef(null);
 
-  const [suggestions, setSuggestions] = useState({ languages: [], frameworks: [] });
+  const [suggestions, setSuggestions] = useState({ languages: [], frameworks: [], tags: [] });
 
   const clientProjectName = useMemo(() => {
     if (!clientProjectId) return "wybrany projekt";
@@ -534,15 +534,39 @@ export default function MiniATSApp() {
   useEffect(() => {
     const langs = new Set();
     const frameworks = new Set();
+    const tags = new Set();
 
     candidates.forEach((c) => {
-      if (c.jezyk_programowania) langs.add(c.jezyk_programowania);
-      if (c.framework) frameworks.add(c.framework);
+      if (c.jezyk_programowania) {
+        String(c.jezyk_programowania)
+          .split(/[,;/|]+/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .forEach((x) => langs.add(x));
+      }
+
+      if (c.framework) {
+        String(c.framework)
+          .split(/[,;/|]+/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .forEach((x) => frameworks.add(x));
+      }
+
+      if (c.tagi) {
+        String(c.tagi)
+          .replace(/#/g, "")
+          .split(/[,;/|]+/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .forEach((x) => tags.add(x));
+      }
     });
 
     setSuggestions({
       languages: Array.from(new Set([...DEFAULT_LANGUAGES, ...langs])).sort(),
       frameworks: Array.from(new Set([...DEFAULT_FRAMEWORKS, ...frameworks])).sort(),
+      tags: Array.from(tags).sort(),
     });
   }, [candidates]);
 
@@ -731,9 +755,24 @@ export default function MiniATSApp() {
       const activeProjectFilter = clientView ? clientProjectId : projectFilter;
       const matchesProject = !activeProjectFilter || c.candidate_projects?.some((cp) => cp.project_id === activeProjectFilter);
       const matchesProjectStatus = !projectStatusFilter || c.candidate_projects?.some((cp) => cp.status === projectStatusFilter);
-      const matchesTags = !tagFilter || includesIgnoreCase(c.tagi, tagFilter);
-      const matchesLanguage = !languageFilter || includesIgnoreCase(c.jezyk_programowania, languageFilter);
-      const matchesFramework = !frameworkFilter || includesIgnoreCase(c.framework, frameworkFilter);
+      const splitSearchTerms = (value) =>
+        String(value || "")
+          .replace(/#/g, "")
+          .split(/[,;/|]+/)
+          .map((x) => x.trim())
+          .filter(Boolean);
+
+      const matchesTags =
+        splitSearchTerms(tagFilter).length === 0 ||
+        splitSearchTerms(tagFilter).every((term) => includesIgnoreCase(c.tagi, term));
+
+      const matchesLanguage =
+        splitSearchTerms(languageFilter).length === 0 ||
+        splitSearchTerms(languageFilter).every((term) => includesIgnoreCase(c.jezyk_programowania, term));
+
+      const matchesFramework =
+        splitSearchTerms(frameworkFilter).length === 0 ||
+        splitSearchTerms(frameworkFilter).every((term) => includesIgnoreCase(c.framework, term));
       const matchesArea = !areaFilter || c.obszar === areaFilter;
       const matchesFavorite = !onlyFavorites || c.favorite;
       const matchesClientStatus = !clientView || !clientStatusFilter || c.candidate_projects?.some((cp) => cp.project_id === clientProjectId && cp.status === clientStatusFilter);
@@ -1163,14 +1202,38 @@ export default function MiniATSApp() {
             <option value="">Projekt: wszystkie</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{getProjectName(p)}</option>)}
           </select>
-          <select className="rounded-xl border p-3" value={languageFilter} onChange={(e) => setLanguageFilter(e.target.value)}>
-            <option value="">Język: wszystkie</option>
-            {suggestions.languages.map((l) => <option key={l}>{l}</option>)}
-          </select>
-          <select className="rounded-xl border p-3" value={frameworkFilter} onChange={(e) => setFrameworkFilter(e.target.value)}>
-            <option value="">Framework: wszystkie</option>
-            {suggestions.frameworks.map((f) => <option key={f}>{f}</option>)}
-          </select>
+          <input
+            className="rounded-xl border p-3"
+            placeholder="Języki, np. Java, Python"
+            value={languageFilter}
+            onChange={(e) => setLanguageFilter(e.target.value)}
+            list="filter-language-suggestions"
+          />
+          <datalist id="filter-language-suggestions">
+            {suggestions.languages.map((l) => <option key={l} value={l} />)}
+          </datalist>
+
+          <input
+            className="rounded-xl border p-3"
+            placeholder="Frameworki, np. React, Django"
+            value={frameworkFilter}
+            onChange={(e) => setFrameworkFilter(e.target.value)}
+            list="filter-framework-suggestions"
+          />
+          <datalist id="filter-framework-suggestions">
+            {suggestions.frameworks.map((f) => <option key={f} value={f} />)}
+          </datalist>
+          <input
+            className="rounded-xl border p-3"
+            placeholder="Tagi, np. Senior, Remote"
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            list="filter-tag-suggestions"
+          />
+          <datalist id="filter-tag-suggestions">
+            {suggestions.tags.map((t) => <option key={t} value={t} />)}
+          </datalist>
+
           <select className="rounded-xl border p-3" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
             <option value="newest">Najnowsi pierwsi</option>
             <option value="oldest">Najstarsi pierwsi</option>
