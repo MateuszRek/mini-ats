@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/apply-normalized-clients.mjs && vite",
-    "build": "node scripts/apply-normalized-clients.mjs && vite build",
+    "dev": "node scripts/apply-normalized-clients.mjs && node scripts/fix-supabase-ambiguity.mjs && vite",
+    "build": "node scripts/apply-normalized-clients.mjs && node scripts/fix-supabase-ambiguity.mjs && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
