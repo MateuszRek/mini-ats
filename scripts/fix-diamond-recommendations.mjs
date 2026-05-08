@@ -139,13 +139,9 @@ replaceOnce(
 
 replaceOnce(
   "      return matchesQuery && matchesGlobalStatus && matchesProject && matchesProjectStatus && matchesTags && matchesLanguage && matchesFramework && matchesArea && matchesFavorite && matchesClientStatus && matchesClientRating;\n",
-  "      return matchesQuery && matchesGlobalStatus && matchesProject && matchesProjectStatus && matchesTags && matchesLanguage && matchesFramework && matchesArea && matchesFavorite && matchesRecommended && matchesClientStatus && matchesRating && matchesClientStatus && matchesClientRating;\n",
+  "      return matchesQuery && matchesGlobalStatus && matchesProject && matchesProjectStatus && matchesTags && matchesLanguage && matchesFramework && matchesArea && matchesFavorite && matchesRecommended && matchesClientStatus && matchesClientRating;\n",
   "filtered return"
 );
-
-if (source.includes("matchesRating &&")) {
-  source = source.replace("matchesFavorite && matchesRecommended && matchesRating && matchesClientStatus", "matchesFavorite && matchesRecommended && matchesClientStatus");
-}
 
 replaceOnce(
   "  }, [candidates, query, globalStatusFilter, projectFilter, projectStatusFilter, tagFilter, languageFilter, frameworkFilter, areaFilter, sortBy, onlyFavorites, clientView, clientProjectId, clientStatusFilter, clientRatingFilter]);\n",
