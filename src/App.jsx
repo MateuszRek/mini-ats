@@ -7,16 +7,39 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://cocydftwrdshqw
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_un7LVevS6WPsvuhl2KBPVg_d_wjK9KD";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const STATUSES = ["New", "Contacted", "Interested", "Interview", "Offer", "Rejected", "Hired"];
+const STATUSES = ["New", "Contacted", "Interested", "Interview", "Recommended", "Offer", "Rejected", "Hired"];
 
 const STATUS_STYLES = {
-  New: "bg-slate-100 text-slate-700 border-slate-200",
-  Contacted: "bg-blue-100 text-blue-700 border-blue-200",
-  Interested: "bg-violet-100 text-violet-700 border-violet-200",
-  Interview: "bg-amber-100 text-amber-800 border-amber-200",
-  Offer: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  Rejected: "bg-red-100 text-red-700 border-red-200",
-  Hired: "bg-green-100 text-green-700 border-green-200",
+  New: "bg-blue-600 text-white border-blue-800 shadow-blue-200",
+  Contacted: "bg-purple-600 text-white border-purple-800 shadow-purple-200",
+  Interested: "bg-indigo-600 text-white border-indigo-800 shadow-indigo-200",
+  Interview: "bg-orange-500 text-white border-orange-700 shadow-orange-200",
+  Recommended: "bg-cyan-600 text-white border-cyan-800 shadow-cyan-200",
+  Offer: "bg-cyan-600 text-white border-cyan-800 shadow-cyan-200",
+  Rejected: "bg-red-600 text-white border-red-800 shadow-red-200",
+  Hired: "bg-green-600 text-white border-green-800 shadow-green-200",
+};
+
+const STATUS_SOFT_STYLES = {
+  New: "bg-blue-50 text-blue-800 border-blue-200",
+  Contacted: "bg-purple-50 text-purple-800 border-purple-200",
+  Interested: "bg-indigo-50 text-indigo-800 border-indigo-200",
+  Interview: "bg-orange-50 text-orange-800 border-orange-200",
+  Recommended: "bg-cyan-50 text-cyan-800 border-cyan-200",
+  Offer: "bg-cyan-50 text-cyan-800 border-cyan-200",
+  Rejected: "bg-red-50 text-red-800 border-red-200",
+  Hired: "bg-green-50 text-green-800 border-green-200",
+};
+
+const STATUS_ACCENTS = {
+  New: "from-blue-700 to-blue-400",
+  Contacted: "from-purple-700 to-fuchsia-500",
+  Interested: "from-indigo-700 to-violet-500",
+  Interview: "from-orange-600 to-amber-400",
+  Recommended: "from-cyan-700 to-teal-400",
+  Offer: "from-cyan-700 to-teal-400",
+  Rejected: "from-red-700 to-rose-500",
+  Hired: "from-green-700 to-emerald-400",
 };
 
 const emptyCandidate = {
@@ -27,7 +50,7 @@ const emptyCandidate = {
   telefon: "",
   linkedin: "",
   lokalizacja: "",
-  doświadczenie: "",
+  "doświadczenie": "",
   notatki: "",
   tagi: "",
   jezyk_programowania: "",
@@ -37,8 +60,16 @@ const emptyCandidate = {
   cv_url: "",
 };
 
-function statusStyle(status) {
+function getStatusStyle(status) {
   return STATUS_STYLES[status] || STATUS_STYLES.New;
+}
+
+function getSoftStatusStyle(status) {
+  return STATUS_SOFT_STYLES[status] || STATUS_SOFT_STYLES.New;
+}
+
+function getAccentStyle(status) {
+  return STATUS_ACCENTS[status] || STATUS_ACCENTS.New;
 }
 
 function includesText(value, query) {
@@ -47,6 +78,52 @@ function includesText(value, query) {
 
 function projectName(project) {
   return project?.name || project?.nazwa || "Projekt bez nazwy";
+}
+
+function splitTags(value) {
+  return String(value || "")
+    .replace(/#/g, "")
+    .split(/[,;/|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildModalDraft(candidate) {
+  return {
+    status: candidate?.status || "New",
+    notatki: candidate?.notatki || "",
+    projectRelations: Object.fromEntries(
+      (candidate?.candidate_projects || []).map((relation) => [
+        relation.id,
+        {
+          status: relation.status || "New",
+          notes: relation.notes || "",
+          interview_summary: relation.interview_summary || "",
+          recruiter_notes: relation.recruiter_notes || "",
+          recommended_to_client: Boolean(relation.recommended_to_client),
+        },
+      ])
+    ),
+  };
+}
+
+function FieldValue({ label, value, children }) {
+  if (!value && !children) return null;
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="text-xs font-black uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="mt-2 break-words text-sm font-semibold leading-relaxed text-slate-800">{children || value}</div>
+    </div>
+  );
+}
+
+function StatusBadge({ status, compact = false }) {
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full border font-black shadow-sm ${compact ? "px-3 py-1 text-xs" : "px-4 py-2 text-sm"} ${getStatusStyle(status)}`}>
+      <span className="h-2 w-2 rounded-full bg-white/90" />
+      {status || "New"}
+    </span>
+  );
 }
 
 export default function MiniATSApp() {
@@ -104,13 +181,13 @@ export default function MiniATSApp() {
     window.scrollTo({ top: scrollY, left: 0, behavior: "auto" });
   });
 
-  const clientProjectName = useMemo(() => {
-    const project = projects.find((item) => item.id === clientProjectId);
-    return projectName(project) || "wybrany projekt";
-  }, [projects, clientProjectId]);
-
   const getClientName = (clientId) => clients.find((client) => client.id === clientId)?.name || "Bez klienta";
   const getProjectClientName = (project) => getClientName(project?.client_id);
+
+  const clientProjectName = useMemo(() => {
+    const project = projects.find((item) => item.id === clientProjectId);
+    return projectName(project);
+  }, [projects, clientProjectId]);
 
   const refreshAll = async () => {
     setLoading(true);
@@ -124,6 +201,9 @@ export default function MiniATSApp() {
     ]);
 
     if (candidateResult.error) setMessage("Błąd pobierania kandydatów: " + candidateResult.error.message);
+    if (projectResult.error) setMessage("Błąd pobierania projektów: " + projectResult.error.message);
+    if (clientResult.error) setMessage("Błąd pobierania klientów: " + clientResult.error.message);
+
     setCandidates(candidateResult.data || []);
     setProjects(projectResult.data || []);
     setClients(clientResult.data || []);
@@ -182,7 +262,7 @@ export default function MiniATSApp() {
       telefon: candidateForm.telefon.trim(),
       linkedin: candidateForm.linkedin.trim(),
       lokalizacja: candidateForm.lokalizacja.trim(),
-      doświadczenie: candidateForm.doświadczenie.trim(),
+      "doświadczenie": String(candidateForm["doświadczenie"] || "").trim(),
       notatki: candidateForm.notatki.trim(),
       tagi: candidateForm.tagi.trim(),
       jezyk_programowania: candidateForm.jezyk_programowania.trim(),
@@ -205,7 +285,8 @@ export default function MiniATSApp() {
 
     if (!editingId && formProjectIds.length) {
       const rows = formProjectIds.map((projectId) => ({ candidate_id: candidateId, project_id: projectId, status: "New" }));
-      await supabase.from("candidate_projects").insert(rows);
+      const { error } = await supabase.from("candidate_projects").insert(rows);
+      if (error) setMessage("Kandydat zapisany, ale nie udało się przypisać projektów: " + error.message);
     }
 
     setCandidateForm(emptyCandidate);
@@ -218,7 +299,7 @@ export default function MiniATSApp() {
 
   const startEditCandidate = (candidate) => {
     setEditingId(candidate.id);
-    setCandidateForm({ ...emptyCandidate, ...candidate, cv_file: null });
+    setCandidateForm({ ...emptyCandidate, ...candidate });
     setActiveTab("add");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -358,8 +439,9 @@ export default function MiniATSApp() {
       osoba_do_kontaktu: newClientContact.trim(),
       email: newClientEmail.trim(),
       telefon: newClientPhone.trim(),
-      notatki: newClientNotes.trim(),
     };
+    if (newClientNotes.trim()) payload.notatki = newClientNotes.trim();
+
     const { error } = await supabase.from("clients").insert([payload]);
     if (error) setMessage("Błąd dodawania klienta: " + error.message);
     else {
@@ -383,8 +465,23 @@ export default function MiniATSApp() {
   const filteredCandidates = useMemo(() => {
     const activeProjectId = clientView ? clientProjectId : projectFilter;
     const rows = candidates.filter((candidate) => {
-      const relationText = (candidate.candidate_projects || []).map((cp) => [cp.status, cp.notes, cp.interview_summary, cp.recruiter_notes, projectName(cp.Projekty)].join(" ")).join(" ");
-      const searchable = [candidate.name, candidate.email, candidate.telefon, candidate.linkedin, candidate.lokalizacja, candidate.doświadczenie, candidate.notatki, candidate.tagi, candidate.jezyk_programowania, candidate.framework, candidate.obszar, relationText].join(" ");
+      const relationText = (candidate.candidate_projects || [])
+        .map((cp) => [cp.status, cp.notes, cp.interview_summary, cp.recruiter_notes, projectName(cp.Projekty)].join(" "))
+        .join(" ");
+      const searchable = [
+        candidate.name,
+        candidate.email,
+        candidate.telefon,
+        candidate.linkedin,
+        candidate.lokalizacja,
+        candidate["doświadczenie"],
+        candidate.notatki,
+        candidate.tagi,
+        candidate.jezyk_programowania,
+        candidate.framework,
+        candidate.obszar,
+        relationText,
+      ].join(" ");
       const matchesQuery = !query || includesText(searchable, query);
       const matchesStatus = !statusFilter || candidate.status === statusFilter;
       const matchesProject = !activeProjectId || candidate.candidate_projects?.some((cp) => cp.project_id === activeProjectId);
@@ -401,46 +498,105 @@ export default function MiniATSApp() {
   }, [candidates, query, statusFilter, projectFilter, onlyFavorites, onlyRecommended, sortBy, clientView, clientProjectId]);
 
   const filteredProjects = useMemo(() => projects.filter((project) => includesText(projectName(project), projectSearch)), [projects, projectSearch]);
-  const filteredClients = useMemo(() => clients.filter((client) => includesText([client.name, client.osoba_do_kontaktu, client.email, client.telefon, client.notatki].join(" "), clientSearch)), [clients, clientSearch]);
+  const filteredClients = useMemo(
+    () => clients.filter((client) => includesText([client.name, client.osoba_do_kontaktu, client.email, client.telefon, client.notatki].join(" "), clientSearch)),
+    [clients, clientSearch]
+  );
   const enlargedCandidate = candidates.find((candidate) => candidate.id === enlargedCandidateId);
+
+  const CandidateProjects = ({ candidate }) => (
+    <div className="mt-4 grid gap-3">
+      {candidate.candidate_projects?.length ? (
+        candidate.candidate_projects.map((relation) => (
+          <div key={relation.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <button type="button" onClick={() => setProjectFilter(relation.project_id)} className="text-left font-black text-slate-900 hover:text-blue-700 hover:underline">
+                  {projectName(relation.Projekty)}
+                </button>
+                <p className="mt-1 text-xs font-semibold text-slate-500">Klient: {getProjectClientName(relation.Projekty)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleRecommendedToClient(candidate, relation)}
+                  className={`rounded-full border px-3 py-1 text-sm font-black ${relation.recommended_to_client ? "border-cyan-500 bg-cyan-500 text-white" : "border-slate-200 bg-white text-slate-400 hover:text-cyan-600"}`}
+                  title="Rekomendowany do klienta"
+                >
+                  ♦
+                </button>
+                <button type="button" onClick={() => removeCandidateFromProject(relation.id)} className="rounded-full border border-red-200 bg-white px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-50">
+                  Usuń
+                </button>
+              </div>
+            </div>
+            <select
+              className={`mt-4 w-full rounded-xl border p-3 text-sm font-black shadow-sm ${getStatusStyle(relation.status || "New")}`}
+              value={relation.status || "New"}
+              onChange={(event) => updateProjectRelation(relation.id, "status", event.target.value)}
+            >
+              {STATUSES.map((status) => <option key={status}>{status}</option>)}
+            </select>
+            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+              <textarea className="min-h-28 rounded-xl border border-slate-200 bg-white p-3 text-sm" defaultValue={relation.notes || ""} onBlur={(event) => updateProjectRelation(relation.id, "notes", event.target.value)} placeholder="Project notes / next step" />
+              <textarea className="min-h-28 rounded-xl border border-slate-200 bg-white p-3 text-sm" defaultValue={relation.interview_summary || ""} onBlur={(event) => updateProjectRelation(relation.id, "interview_summary", event.target.value)} placeholder="Interview summary" />
+              <textarea className="min-h-28 rounded-xl border border-slate-200 bg-white p-3 text-sm" defaultValue={relation.recruiter_notes || ""} onBlur={(event) => updateProjectRelation(relation.id, "recruiter_notes", event.target.value)} placeholder="Recruiter notes" />
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-center text-sm font-semibold text-slate-400">Brak przypisanego projektu</div>
+      )}
+      <div className="flex gap-2">
+        <select className="w-full rounded-xl border p-2" value={selectedProjects[candidate.id] || ""} onChange={(event) => setSelectedProjects((prev) => ({ ...prev, [candidate.id]: event.target.value }))}>
+          <option value="">Wybierz projekt</option>
+          {projects.map((project) => <option key={project.id} value={project.id}>{projectName(project)}</option>)}
+        </select>
+        <button type="button" onClick={() => assignProject(candidate.id)} className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">Przypisz</button>
+      </div>
+    </div>
+  );
 
   const CandidateCard = ({ candidate }) => {
     const active = activeCandidateId === candidate.id;
+    const recommended = isCandidateRecommended(candidate);
     return (
       <div
-        className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:shadow-lg ${active ? "border-cyan-300 ring-2 ring-cyan-100" : "border-slate-200"}`}
+        className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:shadow-lg ${active ? "border-cyan-300 ring-4 ring-cyan-100" : "border-slate-200"}`}
         onDoubleClick={() => openEnlargedCandidate(candidate.id)}
       >
-        <div className="h-2 bg-gradient-to-r from-slate-700 to-cyan-400" />
+        <div className={`h-2 bg-gradient-to-r ${getAccentStyle(candidate.status || "New")}`} />
         <div className="p-5">
           <div className="flex items-start justify-between gap-4">
             {!clientView && (
               <div className="flex flex-col items-center gap-2">
                 <button type="button" onClick={() => toggleFavorite(candidate)} className={`text-2xl ${candidate.favorite ? "text-yellow-400" : "text-slate-300 hover:text-yellow-400"}`} title="Shortlista">★</button>
-                <button type="button" onClick={() => toggleRecommendedToClient(candidate)} className={`text-2xl ${isCandidateRecommended(candidate) ? "text-cyan-500" : "text-slate-300 hover:text-cyan-500"}`} title="Rekomendowany do klienta">♦</button>
+                <button type="button" onClick={() => toggleRecommendedToClient(candidate)} className={`text-2xl ${recommended ? "text-cyan-500" : "text-slate-300 hover:text-cyan-500"}`} title="Rekomendowany do klienta">♦</button>
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <h3 className="text-xl font-black text-slate-900">{candidate.name || "Kandydat bez nazwy"}</h3>
+              <h3 className="text-xl font-black tracking-tight text-slate-950">{candidate.name || "Kandydat bez nazwy"}</h3>
               <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{candidate.email || candidate.telefon || candidate.lokalizacja || "Brak danych kontaktowych"}</p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
                 {candidate.jezyk_programowania && <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">{candidate.jezyk_programowania}</span>}
                 {candidate.framework && <span className="rounded-full bg-violet-50 px-3 py-1 text-violet-700">{candidate.framework}</span>}
-                {candidate.tagi && String(candidate.tagi).split(",").map((tag) => tag.trim()).filter(Boolean).map((tag) => <span key={tag} className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-700">#{tag}</span>)}
+                {candidate.rating > 0 && <span className="rounded-full bg-yellow-50 px-3 py-1 text-yellow-700">{"★".repeat(candidate.rating)}</span>}
+                {splitTags(candidate.tagi).map((tag) => <span key={tag} className="rounded-full bg-indigo-50 px-3 py-1 text-indigo-700">#{tag}</span>)}
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <span className={`rounded-full border px-3 py-1 text-sm font-bold ${statusStyle(candidate.status)}`}>{candidate.status || "New"}</span>
+              <StatusBadge status={candidate.status || "New"} compact />
+              {recommended && <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">♦ Recommended</span>}
               <button type="button" onClick={() => openEnlargedCandidate(candidate.id)} className="rounded-xl border px-3 py-1.5 text-xs font-bold hover:bg-slate-50">Powiększ</button>
             </div>
           </div>
 
           {!clientView && (
             <div className="mt-4 grid gap-3">
-              <select className={`rounded-xl border p-3 font-semibold ${statusStyle(candidate.status)}`} value={candidate.status || "New"} onChange={(event) => updateCandidateStatus(candidate, event.target.value)}>
+              <select className={`rounded-xl border p-3 font-black shadow-sm ${getStatusStyle(candidate.status || "New")}`} value={candidate.status || "New"} onChange={(event) => updateCandidateStatus(candidate, event.target.value)}>
                 {STATUSES.map((status) => <option key={status}>{status}</option>)}
               </select>
-              {candidate.notatki && <p className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">{candidate.notatki}</p>}
+              {candidate.notatki && <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-700">{candidate.notatki}</p>}
               <div className="rounded-2xl border border-slate-200 p-4">
                 <button type="button" onClick={() => toggleProjectSection(candidate.id)} className="flex w-full items-center justify-between text-left text-sm font-bold text-slate-800">
                   <span>Projekty kandydata / podsumowania rozmów</span>
@@ -460,115 +616,236 @@ export default function MiniATSApp() {
     );
   };
 
-  const CandidateProjects = ({ candidate }) => (
-    <div className="mt-4 grid gap-3">
-      {candidate.candidate_projects?.length ? candidate.candidate_projects.map((relation) => (
-        <div key={relation.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <button type="button" onClick={() => setProjectFilter(relation.project_id)} className="font-black text-slate-900 hover:text-blue-700 hover:underline">{projectName(relation.Projekty)}</button>
-              <p className="text-xs text-slate-500">Klient: {getProjectClientName(relation.Projekty)}</p>
-            </div>
-            <div className="flex items-center gap-1">
-              <button type="button" onClick={() => toggleRecommendedToClient(candidate, relation)} className={`rounded-full px-2 text-xl font-black ${relation.recommended_to_client ? "text-cyan-500" : "text-slate-300 hover:text-cyan-500"}`}>♦</button>
-              <button type="button" onClick={() => removeCandidateFromProject(relation.id)} className="rounded-full px-2 text-lg font-black text-red-500 hover:bg-red-50">×</button>
-            </div>
-          </div>
-          <select className={`mt-3 w-full rounded-xl border p-2 text-sm font-semibold ${statusStyle(relation.status)}`} value={relation.status || "New"} onChange={(event) => updateProjectRelation(relation.id, "status", event.target.value)}>
-            {STATUSES.map((status) => <option key={status}>{status}</option>)}
-          </select>
-          <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <textarea className="min-h-24 rounded-xl border p-2 text-sm" placeholder="Notatka projektowa" defaultValue={relation.notes || ""} onBlur={(event) => updateProjectRelation(relation.id, "notes", event.target.value)} />
-            <textarea className="min-h-24 rounded-xl border p-2 text-sm" placeholder="Podsumowanie rozmowy" defaultValue={relation.interview_summary || ""} onBlur={(event) => updateProjectRelation(relation.id, "interview_summary", event.target.value)} />
-            <textarea className="min-h-24 rounded-xl border p-2 text-sm" placeholder="Notatki rekrutera" defaultValue={relation.recruiter_notes || ""} onBlur={(event) => updateProjectRelation(relation.id, "recruiter_notes", event.target.value)} />
-          </div>
-        </div>
-      )) : <p className="text-sm text-slate-400">Brak przypisanego projektu</p>}
-      <div className="flex gap-2">
-        <select className="w-full rounded-xl border p-2" value={selectedProjects[candidate.id] || ""} onChange={(event) => setSelectedProjects((prev) => ({ ...prev, [candidate.id]: event.target.value }))}>
-          <option value="">Wybierz projekt</option>
-          {projects.map((project) => <option key={project.id} value={project.id}>{projectName(project)}</option>)}
-        </select>
-        <button type="button" onClick={() => assignProject(candidate.id)} className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">Przypisz</button>
-      </div>
-    </div>
-  );
+  const EditableCandidateModal = ({ candidate }) => {
+    const [draft, setDraft] = useState(() => buildModalDraft(candidate));
+    const [saving, setSaving] = useState(false);
+    const [feedback, setFeedback] = useState("");
 
-  const CandidateModal = ({ candidate }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
-        <div className="sticky top-0 flex items-start justify-between gap-4 border-b bg-white p-5">
-          <div>
-            <h2 className="text-3xl font-black text-slate-900">{candidate.name || "Kandydat bez nazwy"}</h2>
-            <div className="mt-2 flex flex-wrap gap-2 text-sm font-bold">
-              <span className={`rounded-full border px-3 py-1 ${statusStyle(candidate.status)}`}>{candidate.status || "New"}</span>
-              {candidate.favorite && <span className="rounded-full bg-yellow-50 px-3 py-1 text-yellow-700">Shortlista</span>}
-              {isCandidateRecommended(candidate) && <span className="rounded-full bg-cyan-50 px-3 py-1 text-cyan-700">♦ Rekomendowany</span>}
-            </div>
-          </div>
-          <button type="button" onClick={closeEnlargedCandidate} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800">Zamknij</button>
-        </div>
-        <div className="grid gap-5 p-5 lg:grid-cols-[1fr_1.2fr]">
-          <section className="rounded-2xl border bg-slate-50 p-4 text-sm text-slate-700">
-            <h3 className="mb-3 text-sm font-black uppercase text-slate-500">Dane kandydata</h3>
-            {candidate.email && <p><b>Email:</b> {candidate.email}</p>}
-            {candidate.telefon && <p><b>Telefon:</b> {candidate.telefon}</p>}
-            {candidate.linkedin && <p><b>LinkedIn:</b> <a className="font-semibold text-blue-600 hover:underline" href={candidate.linkedin} target="_blank" rel="noreferrer">Otwórz profil</a></p>}
-            {candidate.lokalizacja && <p><b>Lokalizacja:</b> {candidate.lokalizacja}</p>}
-            {candidate.doświadczenie && <p><b>Doświadczenie:</b> {candidate.doświadczenie}</p>}
-            {candidate.obszar && <p><b>Obszar:</b> {candidate.obszar}</p>}
-            {candidate.jezyk_programowania && <p><b>Język:</b> {candidate.jezyk_programowania}</p>}
-            {candidate.framework && <p><b>Framework:</b> {candidate.framework}</p>}
-            {candidate.tagi && <p><b>Tagi:</b> {candidate.tagi}</p>}
-          </section>
-          <section className="rounded-2xl border bg-white p-4">
-            <h3 className="mb-3 text-sm font-black uppercase text-slate-500">Notatki</h3>
-            <div className="min-h-24 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm text-slate-700">{candidate.notatki || "Brak notatek"}</div>
-          </section>
-          <section className="lg:col-span-2">
-            <h3 className="mb-3 text-sm font-black uppercase text-slate-500">Projekty i rozmowy</h3>
-            <div className="grid gap-3">
-              {candidate.candidate_projects?.length ? candidate.candidate_projects.map((relation) => (
-                <div key={relation.id} className="rounded-2xl border bg-slate-50 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h4 className="text-lg font-black">{projectName(relation.Projekty)}</h4>
-                      <p className="text-sm text-slate-500">Klient: {getProjectClientName(relation.Projekty)}</p>
-                    </div>
-                    <span className={`rounded-full border px-3 py-1 text-sm font-bold ${statusStyle(relation.status)}`}>{relation.status || "New"}</span>
-                  </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <InfoBlock title="Notatka projektowa" value={relation.notes} />
-                    <InfoBlock title="Podsumowanie rozmowy" value={relation.interview_summary} />
-                    <InfoBlock title="Notatki rekrutera" value={relation.recruiter_notes} />
-                  </div>
+    useEffect(() => {
+      setDraft(buildModalDraft(candidate));
+      setFeedback("");
+    }, [candidate.id]);
+
+    const setRelationDraft = (relationId, field, value) => {
+      setDraft((prev) => ({
+        ...prev,
+        projectRelations: {
+          ...prev.projectRelations,
+          [relationId]: {
+            ...(prev.projectRelations[relationId] || {}),
+            [field]: value,
+          },
+        },
+      }));
+    };
+
+    const saveModalChanges = async () => {
+      setSaving(true);
+      setFeedback("");
+
+      const { error: candidateError } = await supabase
+        .from("candidates")
+        .update({ status: draft.status, notatki: draft.notatki })
+        .eq("id", candidate.id);
+
+      if (candidateError) {
+        setSaving(false);
+        setFeedback("Save failed: " + candidateError.message);
+        return;
+      }
+
+      const updates = Object.entries(draft.projectRelations).map(([relationId, relationDraft]) =>
+        supabase
+          .from("candidate_projects")
+          .update({
+            status: relationDraft.status,
+            notes: relationDraft.notes,
+            interview_summary: relationDraft.interview_summary,
+            recruiter_notes: relationDraft.recruiter_notes,
+            recommended_to_client: Boolean(relationDraft.recommended_to_client),
+          })
+          .eq("id", relationId)
+      );
+
+      const results = await Promise.all(updates);
+      const failed = results.find((result) => result.error);
+      if (failed?.error) {
+        setSaving(false);
+        setFeedback("Save failed: " + failed.error.message);
+        return;
+      }
+
+      setCandidates((prev) =>
+        prev.map((item) =>
+          item.id === candidate.id
+            ? {
+                ...item,
+                status: draft.status,
+                notatki: draft.notatki,
+                candidate_projects: item.candidate_projects?.map((relation) => ({
+                  ...relation,
+                  ...(draft.projectRelations[relation.id] || {}),
+                })),
+              }
+            : item
+        )
+      );
+
+      setSaving(false);
+      setFeedback("Saved successfully");
+      refreshAll();
+    };
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm md:p-6">
+        <div className="max-h-[94vh] w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-900/10">
+          <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+            <div className={`h-2 bg-gradient-to-r ${getAccentStyle(draft.status || "New")}`} />
+            <div className="flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between md:p-6">
+              <div className="min-w-0">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <StatusBadge status={draft.status || "New"} />
+                  {candidate.favorite && <span className="rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs font-black text-yellow-700">★ Shortlist</span>}
+                  {isCandidateRecommended(candidate) && <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">♦ Recommended</span>}
                 </div>
-              )) : <div className="rounded-2xl border border-dashed p-6 text-center text-sm text-slate-400">Brak projektów</div>}
+                <h2 className="truncate text-2xl font-black tracking-tight text-slate-950 md:text-4xl">{candidate.name || "Kandydat bez nazwy"}</h2>
+                <p className="mt-2 text-sm font-semibold text-slate-500">Edit candidate status, notes and all project interview fields. Save keeps this modal open.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                {feedback && <span className={`rounded-full px-3 py-2 text-xs font-black ${feedback.includes("failed") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>{feedback}</span>}
+                <button type="button" onClick={saveModalChanges} disabled={saving} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
+                  {saving ? "Saving..." : "Save changes"}
+                </button>
+                <button type="button" onClick={closeEnlargedCandidate} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-800 hover:bg-slate-50">
+                  Close
+                </button>
+              </div>
             </div>
-          </section>
+          </div>
+
+          <div className="max-h-[calc(94vh-132px)] overflow-y-auto bg-slate-50 p-4 md:p-6">
+            <div className="grid gap-5 lg:grid-cols-[0.9fr_1.4fr]">
+              <section className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Candidate details</h3>
+                  <p className="mt-1 text-sm text-slate-500">Quick context while editing the process.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <FieldValue label="Email" value={candidate.email} />
+                  <FieldValue label="Phone" value={candidate.telefon} />
+                  <FieldValue label="Location" value={candidate.lokalizacja} />
+                  <FieldValue label="Experience" value={candidate["doświadczenie"]} />
+                  <FieldValue label="Role area" value={candidate.obszar} />
+                  <FieldValue label="Technology" value={[candidate.jezyk_programowania, candidate.framework].filter(Boolean).join(" / ")} />
+                  {candidate.linkedin && (
+                    <FieldValue label="LinkedIn">
+                      <a className="text-blue-700 hover:underline" href={candidate.linkedin} target="_blank" rel="noreferrer">Open profile</a>
+                    </FieldValue>
+                  )}
+                  {candidate.cv_url && <FieldValue label="CV" value={candidate.cv_url} />}
+                </div>
+                <label className="grid gap-2">
+                  <span className="text-xs font-black uppercase tracking-wide text-slate-400">Candidate status</span>
+                  <select className={`rounded-2xl border p-3 font-black shadow-sm ${getStatusStyle(draft.status || "New")}`} value={draft.status} onChange={(event) => setDraft((prev) => ({ ...prev, status: event.target.value }))}>
+                    {STATUSES.map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                </label>
+              </section>
+
+              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex flex-col gap-1">
+                  <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Candidate notes</h3>
+                  <p className="text-sm text-slate-500">Main notes visible on the candidate profile.</p>
+                </div>
+                <textarea
+                  className="min-h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                  value={draft.notatki}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, notatki: event.target.value }))}
+                  placeholder="Candidate notes, context, risks, next steps..."
+                />
+              </section>
+
+              <section className="lg:col-span-2">
+                <div className="mb-4 flex flex-col gap-1">
+                  <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Projects and interviews</h3>
+                  <p className="text-sm text-slate-500">Edit project status, project notes, interview summary and recruiter notes. Changes are sent to Supabase after Save changes.</p>
+                </div>
+                <div className="grid gap-4">
+                  {candidate.candidate_projects?.length ? (
+                    candidate.candidate_projects.map((relation) => {
+                      const relationDraft = draft.projectRelations[relation.id] || {
+                        status: relation.status || "New",
+                        notes: relation.notes || "",
+                        interview_summary: relation.interview_summary || "",
+                        recruiter_notes: relation.recruiter_notes || "",
+                        recommended_to_client: Boolean(relation.recommended_to_client),
+                      };
+
+                      return (
+                        <div key={relation.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div>
+                              <h4 className="text-xl font-black text-slate-950">{projectName(relation.Projekty)}</h4>
+                              <p className="mt-1 text-sm font-semibold text-slate-500">Client: {getProjectClientName(relation.Projekty)}</p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setRelationDraft(relation.id, "recommended_to_client", !relationDraft.recommended_to_client)}
+                                className={`rounded-full border px-4 py-2 text-sm font-black ${relationDraft.recommended_to_client ? "border-cyan-600 bg-cyan-600 text-white shadow-sm shadow-cyan-200" : "border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-700"}`}
+                              >
+                                ♦ Recommended
+                              </button>
+                              <select
+                                className={`rounded-2xl border px-4 py-2 text-sm font-black shadow-sm ${getStatusStyle(relationDraft.status || "New")}`}
+                                value={relationDraft.status}
+                                onChange={(event) => setRelationDraft(relation.id, "status", event.target.value)}
+                              >
+                                {STATUSES.map((status) => <option key={status}>{status}</option>)}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                            <label className="grid gap-2">
+                              <span className="text-xs font-black uppercase tracking-wide text-slate-400">Project notes</span>
+                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100" value={relationDraft.notes} onChange={(event) => setRelationDraft(relation.id, "notes", event.target.value)} placeholder="Project context, status, next step..." />
+                            </label>
+                            <label className="grid gap-2">
+                              <span className="text-xs font-black uppercase tracking-wide text-slate-400">Interview summary</span>
+                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100" value={relationDraft.interview_summary} onChange={(event) => setRelationDraft(relation.id, "interview_summary", event.target.value)} placeholder="Motivation, expectations, fit, objections..." />
+                            </label>
+                            <label className="grid gap-2">
+                              <span className="text-xs font-black uppercase tracking-wide text-slate-400">Recruiter notes</span>
+                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100" value={relationDraft.recruiter_notes} onChange={(event) => setRelationDraft(relation.id, "recruiter_notes", event.target.value)} placeholder="Internal notes, risks, recommendation..." />
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-semibold text-slate-400">No projects assigned to this candidate.</div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
-
-  const InfoBlock = ({ title, value }) => (
-    <div className="rounded-xl bg-white p-3">
-      <div className="text-xs font-black uppercase text-slate-400">{title}</div>
-      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{value || "Brak"}</p>
-    </div>
-  );
+    );
+  };
 
   const AddCandidateView = () => (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
       <h2 className="text-xl font-black">{editingId ? "Edytuj kandydata" : "Dodaj kandydata"}</h2>
       <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         <input className="rounded-xl border p-3" placeholder="Imię i nazwisko" value={candidateForm.name} onChange={(event) => updateCandidateForm("name", event.target.value)} />
-        <select className="rounded-xl border p-3" value={candidateForm.status} onChange={(event) => updateCandidateForm("status", event.target.value)}>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
+        <select className={`rounded-xl border p-3 font-black ${getSoftStatusStyle(candidateForm.status)}`} value={candidateForm.status} onChange={(event) => updateCandidateForm("status", event.target.value)}>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
         <input className="rounded-xl border p-3" placeholder="Email" value={candidateForm.email} onChange={(event) => updateCandidateForm("email", event.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Telefon" value={candidateForm.telefon} onChange={(event) => updateCandidateForm("telefon", event.target.value)} />
         <input className="rounded-xl border p-3" placeholder="LinkedIn" value={candidateForm.linkedin} onChange={(event) => updateCandidateForm("linkedin", event.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Lokalizacja" value={candidateForm.lokalizacja} onChange={(event) => updateCandidateForm("lokalizacja", event.target.value)} />
-        <input className="rounded-xl border p-3" placeholder="Doświadczenie" value={candidateForm.doświadczenie} onChange={(event) => updateCandidateForm("doświadczenie", event.target.value)} />
+        <input className="rounded-xl border p-3" placeholder="Doświadczenie" value={candidateForm["doświadczenie"]} onChange={(event) => updateCandidateForm("doświadczenie", event.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Język programowania" value={candidateForm.jezyk_programowania} onChange={(event) => updateCandidateForm("jezyk_programowania", event.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Framework" value={candidateForm.framework} onChange={(event) => updateCandidateForm("framework", event.target.value)} />
         <input className="rounded-xl border p-3" placeholder="Obszar" value={candidateForm.obszar} onChange={(event) => updateCandidateForm("obszar", event.target.value)} />
@@ -576,10 +853,14 @@ export default function MiniATSApp() {
         <input className="rounded-xl border p-3" placeholder="CV URL / ścieżka" value={candidateForm.cv_url} onChange={(event) => updateCandidateForm("cv_url", event.target.value)} />
         <textarea className="min-h-28 rounded-xl border p-3 lg:col-span-3" placeholder="Notatki" value={candidateForm.notatki} onChange={(event) => updateCandidateForm("notatki", event.target.value)} />
       </div>
-      {!editingId && <div className="mt-4 flex flex-wrap gap-2">{projects.map((project) => {
-        const selected = formProjectIds.includes(project.id);
-        return <button key={project.id} type="button" onClick={() => setFormProjectIds((prev) => selected ? prev.filter((id) => id !== project.id) : [...prev, project.id])} className={`rounded-full border px-3 py-1 text-sm font-bold ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}>{projectName(project)}</button>;
-      })}</div>}
+      {!editingId && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {projects.map((project) => {
+            const selected = formProjectIds.includes(project.id);
+            return <button key={project.id} type="button" onClick={() => setFormProjectIds((prev) => selected ? prev.filter((id) => id !== project.id) : [...prev, project.id])} className={`rounded-full border px-3 py-1 text-sm font-bold ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}>{projectName(project)}</button>;
+          })}
+        </div>
+      )}
       <div className="mt-5 flex gap-2">
         <button type="button" onClick={saveCandidate} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white hover:bg-slate-800">{editingId ? "Zapisz zmiany" : "Dodaj kandydata"}</button>
         {editingId && <button type="button" onClick={() => { setEditingId(null); setCandidateForm(emptyCandidate); }} className="rounded-xl border px-5 py-3 font-bold hover:bg-slate-50">Anuluj</button>}
@@ -631,7 +912,7 @@ export default function MiniATSApp() {
             <button type="button" onClick={() => deleteProject(project)} className="rounded-full border border-red-200 px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-50">Usuń</button>
           </div>
           <div className="mt-4 rounded-2xl border bg-slate-50 p-3"><label className="mb-1 block text-sm font-bold text-slate-700">Klient projektu</label><select className="w-full rounded-xl border bg-white p-2" value={project.client_id || ""} onChange={(event) => updateProjectClient(project.id, event.target.value)}><option value="">Bez klienta</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></div>
-          <div className="mt-4 grid gap-2">{projectCandidates.map((candidate) => <div key={candidate.id} className="rounded-2xl border bg-slate-50 p-3"><div className="font-bold">{candidate.name}</div><div className="text-sm text-slate-500">{candidate.email || candidate.telefon || "Brak kontaktu"}</div></div>)}</div>
+          <div className="mt-4 grid gap-2">{projectCandidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => openEnlargedCandidate(candidate.id)} className="rounded-2xl border bg-slate-50 p-3 text-left hover:bg-blue-50"><div className="font-bold">{candidate.name}</div><div className="text-sm text-slate-500">{candidate.email || candidate.telefon || "Brak kontaktu"}</div></button>)}</div>
         </div>;
       })}</main>
     </>
@@ -671,7 +952,7 @@ export default function MiniATSApp() {
   }
 
   if (clientView) {
-    return <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8"><div className="mx-auto max-w-6xl"><header className="mb-8 rounded-3xl bg-white p-6 shadow-sm"><h1 className="text-3xl font-black">Mini ATS kandydatów</h1><p className="mt-2 text-slate-500">Shortlista kandydatów - {clientProjectName}</p></header><CandidatesView /></div>{enlargedCandidate && <CandidateModal candidate={enlargedCandidate} />}</div>;
+    return <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8"><div className="mx-auto max-w-6xl"><header className="mb-8 rounded-3xl bg-white p-6 shadow-sm"><h1 className="text-3xl font-black">Mini ATS kandydatów</h1><p className="mt-2 text-slate-500">Shortlista kandydatów - {clientProjectName}</p></header><CandidatesView /></div>{enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}</div>;
   }
 
   return (
@@ -689,7 +970,7 @@ export default function MiniATSApp() {
         </aside>
         <main className="w-full p-4 md:p-8"><div className="mx-auto max-w-6xl"><header className="mb-8 rounded-3xl bg-white p-6 shadow-sm"><h1 className="text-3xl font-black md:text-4xl">{activeTab === "add" && "Dodaj kandydata"}{activeTab === "candidates" && "Baza kandydatów"}{activeTab === "projects" && "Projekty"}{activeTab === "clients" && "Klienci"}</h1><p className="mt-2 text-slate-500">Dane zapisują się w Supabase.</p><div className="mt-4 grid grid-cols-2 gap-2 md:hidden"><button type="button" onClick={() => setActiveTab("add")} className="rounded-xl border p-2 font-bold">Dodaj</button><button type="button" onClick={() => setActiveTab("candidates")} className="rounded-xl border p-2 font-bold">Kandydaci</button><button type="button" onClick={() => setActiveTab("projects")} className="rounded-xl border p-2 font-bold">Projekty</button><button type="button" onClick={() => setActiveTab("clients")} className="rounded-xl border p-2 font-bold">Klienci</button></div></header>{message && <p className="mb-6 rounded-2xl bg-white p-4 text-sm font-semibold text-slate-700 shadow-sm">{message}</p>}{activeTab === "add" && <AddCandidateView />}{activeTab === "candidates" && <CandidatesView />}{activeTab === "projects" && <ProjectsView />}{activeTab === "clients" && <ClientsView />}</div></main>
       </div>
-      {enlargedCandidate && <CandidateModal candidate={enlargedCandidate} />}
+      {enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}
     </div>
   );
 }
