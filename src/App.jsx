@@ -10,36 +10,36 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const STATUSES = ["New", "Contacted", "Interested", "Interview", "Recommended", "Offer", "Rejected", "Hired"];
 
 const STATUS_STYLES = {
-  New: "bg-blue-600 text-white border-blue-800 shadow-blue-200",
-  Contacted: "bg-purple-600 text-white border-purple-800 shadow-purple-200",
-  Interested: "bg-indigo-600 text-white border-indigo-800 shadow-indigo-200",
-  Interview: "bg-orange-500 text-white border-orange-700 shadow-orange-200",
-  Recommended: "bg-cyan-600 text-white border-cyan-800 shadow-cyan-200",
-  Offer: "bg-cyan-600 text-white border-cyan-800 shadow-cyan-200",
-  Rejected: "bg-red-600 text-white border-red-800 shadow-red-200",
-  Hired: "bg-green-600 text-white border-green-800 shadow-green-200",
+  New: "bg-blue-700 text-white border-blue-900 shadow-blue-200",
+  Contacted: "bg-purple-700 text-white border-purple-900 shadow-purple-200",
+  Interested: "bg-fuchsia-700 text-white border-fuchsia-900 shadow-fuchsia-200",
+  Interview: "bg-amber-600 text-white border-amber-800 shadow-amber-200",
+  Recommended: "bg-teal-600 text-white border-teal-800 shadow-teal-200",
+  Offer: "bg-cyan-700 text-white border-cyan-900 shadow-cyan-200",
+  Rejected: "bg-red-700 text-white border-red-900 shadow-red-200",
+  Hired: "bg-emerald-700 text-white border-emerald-900 shadow-emerald-200",
 };
 
 const STATUS_SOFT_STYLES = {
-  New: "bg-blue-50 text-blue-800 border-blue-200",
-  Contacted: "bg-purple-50 text-purple-800 border-purple-200",
-  Interested: "bg-indigo-50 text-indigo-800 border-indigo-200",
-  Interview: "bg-orange-50 text-orange-800 border-orange-200",
-  Recommended: "bg-cyan-50 text-cyan-800 border-cyan-200",
-  Offer: "bg-cyan-50 text-cyan-800 border-cyan-200",
-  Rejected: "bg-red-50 text-red-800 border-red-200",
-  Hired: "bg-green-50 text-green-800 border-green-200",
+  New: "bg-blue-50 text-blue-900 border-blue-300",
+  Contacted: "bg-purple-50 text-purple-900 border-purple-300",
+  Interested: "bg-fuchsia-50 text-fuchsia-900 border-fuchsia-300",
+  Interview: "bg-amber-50 text-amber-900 border-amber-300",
+  Recommended: "bg-teal-50 text-teal-900 border-teal-300",
+  Offer: "bg-cyan-50 text-cyan-900 border-cyan-300",
+  Rejected: "bg-red-50 text-red-900 border-red-300",
+  Hired: "bg-emerald-50 text-emerald-900 border-emerald-300",
 };
 
 const STATUS_ACCENTS = {
-  New: "from-blue-700 to-blue-400",
-  Contacted: "from-purple-700 to-fuchsia-500",
-  Interested: "from-indigo-700 to-violet-500",
-  Interview: "from-orange-600 to-amber-400",
-  Recommended: "from-cyan-700 to-teal-400",
-  Offer: "from-cyan-700 to-teal-400",
-  Rejected: "from-red-700 to-rose-500",
-  Hired: "from-green-700 to-emerald-400",
+  New: "from-blue-800 to-blue-400",
+  Contacted: "from-purple-800 to-purple-400",
+  Interested: "from-fuchsia-800 to-pink-400",
+  Interview: "from-amber-700 to-orange-400",
+  Recommended: "from-teal-700 to-cyan-400",
+  Offer: "from-cyan-800 to-sky-400",
+  Rejected: "from-red-800 to-rose-400",
+  Hired: "from-emerald-800 to-green-400",
 };
 
 const emptyCandidate = {
@@ -57,7 +57,9 @@ const emptyCandidate = {
   framework: "",
   obszar: "",
   rating: 0,
+  cv_file: null,
   cv_url: "",
+  linkedin_text: "",
 };
 
 function getStatusStyle(status) {
@@ -88,8 +90,44 @@ function splitTags(value) {
     .filter(Boolean);
 }
 
+function normalizeParsedCandidate(result = {}) {
+  return {
+    name: result.name || "",
+    email: result.email || "",
+    telefon: result.telefon || result.phone || "",
+    linkedin: result.linkedin || "",
+    lokalizacja: result.lokalizacja || result.location || "",
+    "doświadczenie": result["doświadczenie"] || result.doswiadczenie || result.experience || "",
+    jezyk_programowania: result.jezyk_programowania || result.language || result.languages || result.tech_stack || "",
+    framework: result.framework || result.frameworks || "",
+    obszar: result.obszar || result.area || "",
+    tagi: result.tagi || result.tags || "",
+    notatki: result.notatki || result.notes || "",
+  };
+}
+
+function mergeDefinedFields(base, parsed) {
+  return Object.fromEntries(
+    Object.entries(base).map(([key, value]) => [key, parsed[key] || value || ""])
+  );
+}
+
 function buildModalDraft(candidate) {
   return {
+    details: {
+      name: candidate?.name || "",
+      email: candidate?.email || "",
+      telefon: candidate?.telefon || "",
+      linkedin: candidate?.linkedin || "",
+      lokalizacja: candidate?.lokalizacja || "",
+      "doświadczenie": candidate?.["doświadczenie"] || "",
+      jezyk_programowania: candidate?.jezyk_programowania || "",
+      framework: candidate?.framework || "",
+      obszar: candidate?.obszar || "",
+      tagi: candidate?.tagi || "",
+      rating: candidate?.rating || 0,
+      cv_url: candidate?.cv_url || "",
+    },
     status: candidate?.status || "New",
     notatki: candidate?.notatki || "",
     projectRelations: Object.fromEntries(
@@ -152,6 +190,8 @@ export default function MiniATSApp() {
   const [editingId, setEditingId] = useState(null);
   const [formProjectIds, setFormProjectIds] = useState([]);
   const [selectedProjects, setSelectedProjects] = useState({});
+  const [parsingCv, setParsingCv] = useState(false);
+  const [parsingLinkedin, setParsingLinkedin] = useState(false);
 
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectClientId, setNewProjectClientId] = useState("");
@@ -168,6 +208,7 @@ export default function MiniATSApp() {
   const [activeCandidateId, setActiveCandidateId] = useState(null);
   const [enlargedCandidateId, setEnlargedCandidateId] = useState(null);
   const restoreScrollYRef = useRef(null);
+  const cvInputRef = useRef(null);
 
   const preserveScroll = (action) => {
     restoreScrollYRef.current = window.scrollY;
@@ -249,9 +290,82 @@ export default function MiniATSApp() {
 
   const updateCandidateForm = (field, value) => setCandidateForm((prev) => ({ ...prev, [field]: value }));
 
+  const parseCvFile = async (file) => {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("source", "cv");
+
+    const response = await fetch("/api/parse-cv", { method: "POST", body });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Nieznany błąd AI");
+    return normalizeParsedCandidate(result);
+  };
+
+  const parseCv = async () => {
+    if (!candidateForm.cv_file) {
+      setMessage("Najpierw wybierz plik CV albo zdjęcie CV");
+      return;
+    }
+
+    setParsingCv(true);
+    setMessage("AI przepisuje dane z CV...");
+    try {
+      const parsed = await parseCvFile(candidateForm.cv_file);
+      setCandidateForm((prev) => ({ ...prev, ...mergeDefinedFields(prev, parsed) }));
+      setMessage("Dane z CV uzupełnione. Sprawdź je przed zapisem.");
+    } catch (error) {
+      setMessage("Błąd AI CV: " + error.message);
+    } finally {
+      setParsingCv(false);
+    }
+  };
+
+  const parseLinkedin = async () => {
+    if (!candidateForm.linkedin_text.trim() && !candidateForm.linkedin.trim()) {
+      setMessage("Wklej link LinkedIn albo tekst profilu LinkedIn");
+      return;
+    }
+
+    setParsingLinkedin(true);
+    setMessage("AI przepisuje dane z LinkedIn...");
+    try {
+      const response = await fetch("/api/parse-cv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "linkedin", linkedinUrl: candidateForm.linkedin, linkedinText: candidateForm.linkedin_text }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Nieznany błąd AI");
+      const parsed = normalizeParsedCandidate(result);
+      setCandidateForm((prev) => ({ ...prev, ...mergeDefinedFields(prev, parsed) }));
+      setMessage("Dane z LinkedIn uzupełnione. Sprawdź je przed zapisem.");
+    } catch (error) {
+      setMessage("Błąd AI LinkedIn: " + error.message);
+    } finally {
+      setParsingLinkedin(false);
+    }
+  };
+
+  const uploadCvFile = async (file) => {
+    if (!file) return "";
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fileName = `cv/${Date.now()}_${safeFileName}`;
+    const { error } = await supabase.storage.from("CV").upload(fileName, file);
+    if (error) throw new Error(error.message);
+    return fileName;
+  };
+
   const saveCandidate = async () => {
     if (!candidateForm.name.trim()) {
       setMessage("Podaj imię i nazwisko kandydata");
+      return;
+    }
+
+    let cvUrl = candidateForm.cv_url.trim();
+    try {
+      if (candidateForm.cv_file) cvUrl = await uploadCvFile(candidateForm.cv_file);
+    } catch (error) {
+      setMessage("Błąd uploadu CV: " + error.message);
       return;
     }
 
@@ -270,7 +384,7 @@ export default function MiniATSApp() {
       obszar: candidateForm.obszar.trim(),
       rating: Number(candidateForm.rating) || 0,
       favorite: Boolean(candidateForm.favorite),
-      cv_url: candidateForm.cv_url.trim(),
+      cv_url: cvUrl,
     };
 
     let candidateId = editingId;
@@ -290,6 +404,7 @@ export default function MiniATSApp() {
     }
 
     setCandidateForm(emptyCandidate);
+    if (cvInputRef.current) cvInputRef.current.value = "";
     setEditingId(null);
     setFormProjectIds([]);
     setActiveTab("candidates");
@@ -299,7 +414,7 @@ export default function MiniATSApp() {
 
   const startEditCandidate = (candidate) => {
     setEditingId(candidate.id);
-    setCandidateForm({ ...emptyCandidate, ...candidate });
+    setCandidateForm({ ...emptyCandidate, ...candidate, cv_file: null, linkedin_text: "" });
     setActiveTab("add");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -520,7 +635,7 @@ export default function MiniATSApp() {
                 <button
                   type="button"
                   onClick={() => toggleRecommendedToClient(candidate, relation)}
-                  className={`rounded-full border px-3 py-1 text-sm font-black ${relation.recommended_to_client ? "border-cyan-500 bg-cyan-500 text-white" : "border-slate-200 bg-white text-slate-400 hover:text-cyan-600"}`}
+                  className={`rounded-full border px-3 py-1 text-sm font-black ${relation.recommended_to_client ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 bg-white text-slate-400 hover:text-teal-700"}`}
                   title="Rekomendowany do klienta"
                 >
                   ♦
@@ -562,7 +677,7 @@ export default function MiniATSApp() {
     const recommended = isCandidateRecommended(candidate);
     return (
       <div
-        className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:shadow-lg ${active ? "border-cyan-300 ring-4 ring-cyan-100" : "border-slate-200"}`}
+        className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:shadow-lg ${active ? "border-teal-300 ring-4 ring-teal-100" : "border-slate-200"}`}
         onDoubleClick={() => openEnlargedCandidate(candidate.id)}
       >
         <div className={`h-2 bg-gradient-to-r ${getAccentStyle(candidate.status || "New")}`} />
@@ -571,7 +686,7 @@ export default function MiniATSApp() {
             {!clientView && (
               <div className="flex flex-col items-center gap-2">
                 <button type="button" onClick={() => toggleFavorite(candidate)} className={`text-2xl ${candidate.favorite ? "text-yellow-400" : "text-slate-300 hover:text-yellow-400"}`} title="Shortlista">★</button>
-                <button type="button" onClick={() => toggleRecommendedToClient(candidate)} className={`text-2xl ${recommended ? "text-cyan-500" : "text-slate-300 hover:text-cyan-500"}`} title="Rekomendowany do klienta">♦</button>
+                <button type="button" onClick={() => toggleRecommendedToClient(candidate)} className={`text-2xl ${recommended ? "text-teal-500" : "text-slate-300 hover:text-teal-500"}`} title="Rekomendowany do klienta">♦</button>
               </div>
             )}
             <div className="min-w-0 flex-1">
@@ -586,7 +701,7 @@ export default function MiniATSApp() {
             </div>
             <div className="flex flex-col items-end gap-2">
               <StatusBadge status={candidate.status || "New"} compact />
-              {recommended && <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">♦ Recommended</span>}
+              {recommended && <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-black text-teal-800">♦ Recommended</span>}
               <button type="button" onClick={() => openEnlargedCandidate(candidate.id)} className="rounded-xl border px-3 py-1.5 text-xs font-bold hover:bg-slate-50">Powiększ</button>
             </div>
           </div>
@@ -620,11 +735,20 @@ export default function MiniATSApp() {
     const [draft, setDraft] = useState(() => buildModalDraft(candidate));
     const [saving, setSaving] = useState(false);
     const [feedback, setFeedback] = useState("");
+    const [modalCvFile, setModalCvFile] = useState(null);
+    const [modalParsingCv, setModalParsingCv] = useState(false);
+    const modalCvInputRef = useRef(null);
 
     useEffect(() => {
       setDraft(buildModalDraft(candidate));
       setFeedback("");
+      setModalCvFile(null);
+      if (modalCvInputRef.current) modalCvInputRef.current.value = "";
     }, [candidate.id]);
+
+    const setDetailDraft = (field, value) => {
+      setDraft((prev) => ({ ...prev, details: { ...prev.details, [field]: value } }));
+    };
 
     const setRelationDraft = (relationId, field, value) => {
       setDraft((prev) => ({
@@ -639,15 +763,60 @@ export default function MiniATSApp() {
       }));
     };
 
+    const parseModalCv = async () => {
+      if (!modalCvFile) {
+        setFeedback("Choose a CV file first");
+        return;
+      }
+
+      setModalParsingCv(true);
+      setFeedback("AI is reading the CV...");
+      try {
+        const parsed = await parseCvFile(modalCvFile);
+        setDraft((prev) => ({
+          ...prev,
+          details: { ...prev.details, ...mergeDefinedFields(prev.details, parsed) },
+          notatki: parsed.notatki || prev.notatki,
+        }));
+        setFeedback("CV parsed. Review fields before saving.");
+      } catch (error) {
+        setFeedback("AI CV failed: " + error.message);
+      } finally {
+        setModalParsingCv(false);
+      }
+    };
+
     const saveModalChanges = async () => {
       setSaving(true);
       setFeedback("");
 
-      const { error: candidateError } = await supabase
-        .from("candidates")
-        .update({ status: draft.status, notatki: draft.notatki })
-        .eq("id", candidate.id);
+      let cvUrl = draft.details.cv_url || "";
+      try {
+        if (modalCvFile) cvUrl = await uploadCvFile(modalCvFile);
+      } catch (error) {
+        setSaving(false);
+        setFeedback("CV upload failed: " + error.message);
+        return;
+      }
 
+      const candidatePayload = {
+        name: draft.details.name.trim(),
+        email: draft.details.email.trim(),
+        telefon: draft.details.telefon.trim(),
+        linkedin: draft.details.linkedin.trim(),
+        lokalizacja: draft.details.lokalizacja.trim(),
+        "doświadczenie": String(draft.details["doświadczenie"] || "").trim(),
+        jezyk_programowania: draft.details.jezyk_programowania.trim(),
+        framework: draft.details.framework.trim(),
+        obszar: draft.details.obszar.trim(),
+        tagi: draft.details.tagi.trim(),
+        rating: Number(draft.details.rating) || 0,
+        cv_url: cvUrl,
+        status: draft.status,
+        notatki: draft.notatki,
+      };
+
+      const { error: candidateError } = await supabase.from("candidates").update(candidatePayload).eq("id", candidate.id);
       if (candidateError) {
         setSaving(false);
         setFeedback("Save failed: " + candidateError.message);
@@ -675,24 +844,13 @@ export default function MiniATSApp() {
         return;
       }
 
-      setCandidates((prev) =>
-        prev.map((item) =>
-          item.id === candidate.id
-            ? {
-                ...item,
-                status: draft.status,
-                notatki: draft.notatki,
-                candidate_projects: item.candidate_projects?.map((relation) => ({
-                  ...relation,
-                  ...(draft.projectRelations[relation.id] || {}),
-                })),
-              }
-            : item
-        )
-      );
-
+      setDraft((prev) => ({ ...prev, details: { ...prev.details, cv_url: cvUrl } }));
       setSaving(false);
       setFeedback("Saved successfully");
+    };
+
+    const closeModal = () => {
+      closeEnlargedCandidate();
       refreshAll();
     };
 
@@ -706,17 +864,17 @@ export default function MiniATSApp() {
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <StatusBadge status={draft.status || "New"} />
                   {candidate.favorite && <span className="rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-xs font-black text-yellow-700">★ Shortlist</span>}
-                  {isCandidateRecommended(candidate) && <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">♦ Recommended</span>}
+                  {isCandidateRecommended(candidate) && <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-black text-teal-800">♦ Recommended</span>}
                 </div>
-                <h2 className="truncate text-2xl font-black tracking-tight text-slate-950 md:text-4xl">{candidate.name || "Kandydat bez nazwy"}</h2>
-                <p className="mt-2 text-sm font-semibold text-slate-500">Edit candidate status, notes and all project interview fields. Save keeps this modal open.</p>
+                <h2 className="truncate text-2xl font-black tracking-tight text-slate-950 md:text-4xl">{draft.details.name || candidate.name || "Kandydat bez nazwy"}</h2>
+                <p className="mt-2 text-sm font-semibold text-slate-500">Edit candidate details, AI-fill from CV, update project notes and save to Supabase.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2 md:justify-end">
-                {feedback && <span className={`rounded-full px-3 py-2 text-xs font-black ${feedback.includes("failed") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>{feedback}</span>}
+                {feedback && <span className={`rounded-full px-3 py-2 text-xs font-black ${feedback.includes("failed") || feedback.includes("Choose") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>{feedback}</span>}
                 <button type="button" onClick={saveModalChanges} disabled={saving} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
                   {saving ? "Saving..." : "Save changes"}
                 </button>
-                <button type="button" onClick={closeEnlargedCandidate} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-800 hover:bg-slate-50">
+                <button type="button" onClick={closeModal} className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-800 hover:bg-slate-50">
                   Close
                 </button>
               </div>
@@ -724,32 +882,43 @@ export default function MiniATSApp() {
           </div>
 
           <div className="max-h-[calc(94vh-132px)] overflow-y-auto bg-slate-50 p-4 md:p-6">
-            <div className="grid gap-5 lg:grid-cols-[0.9fr_1.4fr]">
-              <section className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div>
+            <div className="grid gap-5 lg:grid-cols-[0.95fr_1.35fr]">
+              <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4">
                   <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Candidate details</h3>
-                  <p className="mt-1 text-sm text-slate-500">Quick context while editing the process.</p>
+                  <p className="mt-1 text-sm text-slate-500">Edit core candidate fields and parse a new CV if needed.</p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                  <FieldValue label="Email" value={candidate.email} />
-                  <FieldValue label="Phone" value={candidate.telefon} />
-                  <FieldValue label="Location" value={candidate.lokalizacja} />
-                  <FieldValue label="Experience" value={candidate["doświadczenie"]} />
-                  <FieldValue label="Role area" value={candidate.obszar} />
-                  <FieldValue label="Technology" value={[candidate.jezyk_programowania, candidate.framework].filter(Boolean).join(" / ")} />
-                  {candidate.linkedin && (
-                    <FieldValue label="LinkedIn">
-                      <a className="text-blue-700 hover:underline" href={candidate.linkedin} target="_blank" rel="noreferrer">Open profile</a>
-                    </FieldValue>
-                  )}
-                  {candidate.cv_url && <FieldValue label="CV" value={candidate.cv_url} />}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input className="rounded-xl border p-3" placeholder="Name" value={draft.details.name} onChange={(event) => setDetailDraft("name", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Email" value={draft.details.email} onChange={(event) => setDetailDraft("email", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Phone" value={draft.details.telefon} onChange={(event) => setDetailDraft("telefon", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="LinkedIn" value={draft.details.linkedin} onChange={(event) => setDetailDraft("linkedin", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Location" value={draft.details.lokalizacja} onChange={(event) => setDetailDraft("lokalizacja", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Experience" value={draft.details["doświadczenie"]} onChange={(event) => setDetailDraft("doświadczenie", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Tech stack" value={draft.details.jezyk_programowania} onChange={(event) => setDetailDraft("jezyk_programowania", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Framework" value={draft.details.framework} onChange={(event) => setDetailDraft("framework", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Area" value={draft.details.obszar} onChange={(event) => setDetailDraft("obszar", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Tags" value={draft.details.tagi} onChange={(event) => setDetailDraft("tagi", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="Rating" type="number" min="0" max="5" value={draft.details.rating} onChange={(event) => setDetailDraft("rating", event.target.value)} />
+                  <input className="rounded-xl border p-3" placeholder="CV URL / path" value={draft.details.cv_url} onChange={(event) => setDetailDraft("cv_url", event.target.value)} />
                 </div>
-                <label className="grid gap-2">
+                <label className="mt-4 grid gap-2">
                   <span className="text-xs font-black uppercase tracking-wide text-slate-400">Candidate status</span>
                   <select className={`rounded-2xl border p-3 font-black shadow-sm ${getStatusStyle(draft.status || "New")}`} value={draft.status} onChange={(event) => setDraft((prev) => ({ ...prev, status: event.target.value }))}>
                     {STATUSES.map((status) => <option key={status}>{status}</option>)}
                   </select>
                 </label>
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-black uppercase tracking-wide text-slate-400">AI CV parsing</div>
+                  <input ref={modalCvInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(event) => setModalCvFile(event.target.files?.[0] || null)} />
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <button type="button" onClick={() => modalCvInputRef.current?.click()} className="rounded-xl border bg-white px-4 py-3 text-sm font-black hover:bg-slate-50">Choose CV</button>
+                    <span className="text-sm font-semibold text-slate-500">{modalCvFile ? modalCvFile.name : draft.details.cv_url ? "Existing CV saved" : "No file selected"}</span>
+                  </div>
+                  <button type="button" onClick={parseModalCv} disabled={modalParsingCv || !modalCvFile} className="mt-3 rounded-xl bg-teal-600 px-4 py-2 text-sm font-black text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                    {modalParsingCv ? "Parsing..." : "AI parse CV"}
+                  </button>
+                </div>
               </section>
 
               <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -758,7 +927,7 @@ export default function MiniATSApp() {
                   <p className="text-sm text-slate-500">Main notes visible on the candidate profile.</p>
                 </div>
                 <textarea
-                  className="min-h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                  className="min-h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100"
                   value={draft.notatki}
                   onChange={(event) => setDraft((prev) => ({ ...prev, notatki: event.target.value }))}
                   placeholder="Candidate notes, context, risks, next steps..."
@@ -792,7 +961,7 @@ export default function MiniATSApp() {
                               <button
                                 type="button"
                                 onClick={() => setRelationDraft(relation.id, "recommended_to_client", !relationDraft.recommended_to_client)}
-                                className={`rounded-full border px-4 py-2 text-sm font-black ${relationDraft.recommended_to_client ? "border-cyan-600 bg-cyan-600 text-white shadow-sm shadow-cyan-200" : "border-slate-200 bg-white text-slate-500 hover:border-cyan-300 hover:text-cyan-700"}`}
+                                className={`rounded-full border px-4 py-2 text-sm font-black ${relationDraft.recommended_to_client ? "border-teal-600 bg-teal-600 text-white shadow-sm shadow-teal-200" : "border-slate-200 bg-white text-slate-500 hover:border-teal-300 hover:text-teal-700"}`}
                               >
                                 ♦ Recommended
                               </button>
@@ -809,15 +978,15 @@ export default function MiniATSApp() {
                           <div className="mt-5 grid gap-4 lg:grid-cols-3">
                             <label className="grid gap-2">
                               <span className="text-xs font-black uppercase tracking-wide text-slate-400">Project notes</span>
-                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100" value={relationDraft.notes} onChange={(event) => setRelationDraft(relation.id, "notes", event.target.value)} placeholder="Project context, status, next step..." />
+                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100" value={relationDraft.notes} onChange={(event) => setRelationDraft(relation.id, "notes", event.target.value)} placeholder="Project context, status, next step..." />
                             </label>
                             <label className="grid gap-2">
                               <span className="text-xs font-black uppercase tracking-wide text-slate-400">Interview summary</span>
-                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100" value={relationDraft.interview_summary} onChange={(event) => setRelationDraft(relation.id, "interview_summary", event.target.value)} placeholder="Motivation, expectations, fit, objections..." />
+                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100" value={relationDraft.interview_summary} onChange={(event) => setRelationDraft(relation.id, "interview_summary", event.target.value)} placeholder="Motivation, expectations, fit, objections..." />
                             </label>
                             <label className="grid gap-2">
                               <span className="text-xs font-black uppercase tracking-wide text-slate-400">Recruiter notes</span>
-                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100" value={relationDraft.recruiter_notes} onChange={(event) => setRelationDraft(relation.id, "recruiter_notes", event.target.value)} placeholder="Internal notes, risks, recommendation..." />
+                              <textarea className="min-h-44 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm leading-relaxed text-slate-800 outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-100" value={relationDraft.recruiter_notes} onChange={(event) => setRelationDraft(relation.id, "recruiter_notes", event.target.value)} placeholder="Internal notes, risks, recommendation..." />
                             </label>
                           </div>
                         </div>
@@ -853,6 +1022,28 @@ export default function MiniATSApp() {
         <input className="rounded-xl border p-3" placeholder="CV URL / ścieżka" value={candidateForm.cv_url} onChange={(event) => updateCandidateForm("cv_url", event.target.value)} />
         <textarea className="min-h-28 rounded-xl border p-3 lg:col-span-3" placeholder="Notatki" value={candidateForm.notatki} onChange={(event) => updateCandidateForm("notatki", event.target.value)} />
       </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="text-sm font-black text-slate-900">AI CV parsing</div>
+        <p className="mt-1 text-sm text-slate-500">Upload CV or CV screenshot, let AI fill the form, then edit manually before saving.</p>
+        <input ref={cvInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(event) => updateCandidateForm("cv_file", event.target.files?.[0] || null)} />
+        <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
+          <button type="button" onClick={() => cvInputRef.current?.click()} className="rounded-xl border bg-white px-4 py-3 font-black text-slate-800 hover:bg-slate-50">Choose CV / image</button>
+          <span className="text-sm font-semibold text-slate-500">{candidateForm.cv_file ? candidateForm.cv_file.name : candidateForm.cv_url ? "Existing CV saved" : "No file selected"}</span>
+        </div>
+        <button type="button" onClick={parseCv} disabled={parsingCv || !candidateForm.cv_file} className="mt-3 rounded-xl bg-teal-600 px-4 py-2 font-black text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+          {parsingCv ? "Parsing CV..." : "AI parse CV"}
+        </button>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="text-sm font-black text-slate-900">AI LinkedIn parsing</div>
+        <textarea className="mt-3 min-h-24 w-full rounded-xl border bg-white p-3" placeholder="Paste LinkedIn profile text here..." value={candidateForm.linkedin_text} onChange={(event) => updateCandidateForm("linkedin_text", event.target.value)} />
+        <button type="button" onClick={parseLinkedin} disabled={parsingLinkedin || (!candidateForm.linkedin_text.trim() && !candidateForm.linkedin.trim())} className="mt-3 rounded-xl bg-purple-600 px-4 py-2 font-black text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+          {parsingLinkedin ? "Parsing LinkedIn..." : "AI parse LinkedIn"}
+        </button>
+      </div>
+
       {!editingId && (
         <div className="mt-4 flex flex-wrap gap-2">
           {projects.map((project) => {
@@ -863,7 +1054,7 @@ export default function MiniATSApp() {
       )}
       <div className="mt-5 flex gap-2">
         <button type="button" onClick={saveCandidate} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white hover:bg-slate-800">{editingId ? "Zapisz zmiany" : "Dodaj kandydata"}</button>
-        {editingId && <button type="button" onClick={() => { setEditingId(null); setCandidateForm(emptyCandidate); }} className="rounded-xl border px-5 py-3 font-bold hover:bg-slate-50">Anuluj</button>}
+        {editingId && <button type="button" onClick={() => { setEditingId(null); setCandidateForm(emptyCandidate); if (cvInputRef.current) cvInputRef.current.value = ""; }} className="rounded-xl border px-5 py-3 font-bold hover:bg-slate-50">Anuluj</button>}
       </div>
     </section>
   );
