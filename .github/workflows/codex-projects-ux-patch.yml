@@ -1,0 +1,48 @@
+name: Codex Projects UX Patch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/codex-projects-ux-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Projects UX
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'src/App.jsx';
+          let s = fs.readFileSync(path, 'utf8');
+
+          const marker = '{candidatesOpen && <div className="mt-3 grid gap-2">{projectCandidates.map';
+          const start = s.indexOf(marker);
+          if (start < 0) throw new Error('candidate list start not found');
+          const endMarker = '</button>)}</div>}';
+          const end = s.indexOf(endMarker, start);
+          if (end < 0) throw new Error('candidate list end not found');
+          const newBlock = `{candidatesOpen && <div className="mt-3 grid gap-2">{projectCandidates.map(({ candidate, relation }) => <button key={relation.id} type="button" onClick={() => openModal(candidate.id)} className="flex items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2 text-left shadow-sm hover:shadow-md"><span className="min-w-0 truncate font-black text-slate-900">{candidate.name || "Kandydat bez nazwy"}</span><StatusBadge status={relation.status || candidate.status || "New"} compact /></button>)}</div>}`;
+          s = s.slice(0, start) + newBlock + s.slice(end + endMarker.length);
+
+          s = s.replace('<CandidatesView />', '{CandidatesView()}');
+          s = s.replace('{activeTab === "add" && <AddCandidateView />}', '{activeTab === "add" && AddCandidateView()}');
+          s = s.replace('{activeTab === "candidates" && <CandidatesView />}', '{activeTab === "candidates" && CandidatesView()}');
+          s = s.replace('{activeTab === "projects" && <ProjectsView />}', '{activeTab === "projects" && ProjectsView()}');
+          s = s.replace('{activeTab === "clients" && <ClientsView />}', '{activeTab === "clients" && ClientsView()}');
+
+          fs.writeFileSync(path, s);
+          NODE
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.jsx
+          git commit -m "Fix Projects typing focus and compact candidates" || exit 0
+          git push
