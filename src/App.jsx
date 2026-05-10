@@ -228,6 +228,17 @@ function StatusBadge({ status, compact = false }) {
   );
 }
 
+function formatHistoryDate(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatHistoryValue(value) {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 export default function MiniATSApp() {
   const [authLoading, setAuthLoading] = useState(true);
   const [session, setSession] = useState(null);
@@ -288,6 +299,9 @@ export default function MiniATSApp() {
   const [openProjectSections, setOpenProjectSections] = useState({});
   const [activeCandidateId, setActiveCandidateId] = useState(null);
   const [enlargedCandidateId, setEnlargedCandidateId] = useState(null);
+  const [historyModal, setHistoryModal] = useState(null);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const restoreScrollYRef = useRef(null);
   const cvInputRef = useRef(null);
 
@@ -365,6 +379,31 @@ export default function MiniATSApp() {
   const getClientName = (clientId) => clients.find((client) => client.id === clientId)?.name || "Bez klienta";
   const getProjectClientName = (project) => getClientName(project?.client_id);
 
+  const logActivity = async ({ entityType = "system", entityId = "system", actionType, actionLabel, oldValue = null, newValue = null, metadata = {} }) => {
+    if (!actionType || !actionLabel) return;
+    const row = { entity_type: entityType, entity_id: String(entityId || "system"), action_type: actionType, action_label: actionLabel, old_value: oldValue === undefined || oldValue === null ? null : formatHistoryValue(oldValue), new_value: newValue === undefined || newValue === null ? null : formatHistoryValue(newValue), metadata };
+    const { error } = await supabase.from("activity_history").insert([row]);
+    if (error && !["42P01", "PGRST116", "PGRST205"].includes(error.code)) console.warn("Activity history skipped:", error.message);
+  };
+
+  const openActivityHistory = async (entityType, entityId, title) => {
+    preserveScroll(() => setHistoryModal({ entityType, entityId: String(entityId || "system"), title }));
+    setHistoryLoading(true);
+    const { data, error } = await supabase.from("activity_history").select("*").eq("entity_type", entityType).eq("entity_id", String(entityId || "system")).order("created_at", { ascending: false }).limit(80);
+    setHistoryItems(error ? [] : data || []);
+    setHistoryLoading(false);
+  };
+
+  const closeActivityHistory = () => preserveScroll(() => setHistoryModal(null));
+
+  const getRelationContext = (relationId) => {
+    for (const candidate of candidates) {
+      const relation = candidate.candidate_projects?.find((item) => item.id === relationId);
+      if (relation) return { candidate, relation, project: relation.Projekty || projects.find((item) => item.id === relation.project_id) || null };
+    }
+    return { candidate: null, relation: null, project: null };
+  };
+
   const login = async () => {
     setMessage("");
     const { error } = await supabase.auth.signInWithPassword({ email: loginEmail.trim(), password: loginPassword });
@@ -399,6 +438,7 @@ export default function MiniATSApp() {
     try {
       const parsed = await parseCvFile(form.cv_file);
       setForm((prev) => mergeParsed(prev, parsed));
+      await logActivity({ entityType: "system", entityId: "candidate-form", actionType: "cv_parsed", actionLabel: "CV parsed with AI", metadata: { file_name: form.cv_file?.name || "CV" } });
       setMessage("Dane z CV uzupełnione. Sprawdź je przed zapisem.");
     } catch (error) {
       setMessage("Błąd AI CV: " + error.message);
@@ -449,55 +489,36 @@ export default function MiniATSApp() {
   };
 
   const saveCandidate = async () => {
-    if (!form.name.trim()) return setMessage("Podaj imię i nazwisko kandydata");
+    if (!form.name.trim()) return setMessage("Podaj imie i nazwisko kandydata");
+    const previousCandidate = editingId ? candidates.find((candidate) => candidate.id === editingId) : null;
     let cvUrl = String(form.cv_url || "").trim();
+    let uploadedCvName = "";
     try {
-      if (form.cv_file) cvUrl = await uploadCvFile(form.cv_file);
-    } catch (error) {
-      return setMessage("Błąd uploadu CV: " + error.message);
-    }
+      if (form.cv_file) { uploadedCvName = form.cv_file.name; cvUrl = await uploadCvFile(form.cv_file); }
+    } catch (error) { return setMessage("Blad uploadu CV: " + error.message); }
 
-    const payload = {
-      name: form.name.trim(),
-      status: form.status,
-      email: form.email.trim(),
-      telefon: form.telefon.trim(),
-      linkedin: form.linkedin.trim(),
-      lokalizacja: form.lokalizacja.trim(),
-      doświadczenie: String(form.doświadczenie || "").trim(),
-      notatki: form.notatki.trim(),
-      tagi: form.tagi.trim(),
-      jezyk_programowania: form.jezyk_programowania.trim(),
-      framework: form.framework.trim(),
-      obszar: form.obszar.trim(),
-      rating: Number(form.rating) || 0,
-      favorite: Boolean(form.favorite),
-      cv_url: cvUrl,
-    };
-
+    const payload = { name: form.name.trim(), status: form.status, email: form.email.trim(), telefon: form.telefon.trim(), linkedin: form.linkedin.trim(), lokalizacja: form.lokalizacja.trim(), doświadczenie: String(form.doświadczenie || form.doswiadczenie || "").trim(), notatki: form.notatki.trim(), tagi: form.tagi.trim(), jezyk_programowania: form.jezyk_programowania.trim(), framework: form.framework.trim(), obszar: form.obszar.trim(), rating: Number(form.rating) || 0, favorite: Boolean(form.favorite), cv_url: cvUrl };
     let savedId = editingId;
     if (editingId) {
       const { error } = await supabase.from("candidates").update(payload).eq("id", editingId);
-      if (error) return setMessage("Nie udało się zapisać kandydata: " + error.message);
+      if (error) return setMessage("Nie udalo sie zapisac kandydata: " + error.message);
+      await logActivity({ entityType: "candidate", entityId: editingId, actionType: "candidate_edited", actionLabel: "Candidate edited", metadata: { candidate_name: payload.name } });
+      if (previousCandidate?.status !== payload.status) await logActivity({ entityType: "candidate", entityId: editingId, actionType: "status_changed", actionLabel: "Status changed", oldValue: previousCandidate?.status || "", newValue: payload.status, metadata: { candidate_name: payload.name } });
+      if ((previousCandidate?.notatki || "") !== payload.notatki) await logActivity({ entityType: "candidate", entityId: editingId, actionType: "notes_changed", actionLabel: "Candidate notes changed", oldValue: previousCandidate?.notatki || "", newValue: payload.notatki, metadata: { candidate_name: payload.name } });
     } else {
       const { data, error } = await supabase.from("candidates").insert([payload]).select().single();
-      if (error) return setMessage("Nie udało się dodać kandydata: " + error.message);
+      if (error) return setMessage("Nie udalo sie dodac kandydata: " + error.message);
       savedId = data.id;
+      await logActivity({ entityType: "candidate", entityId: savedId, actionType: "candidate_created", actionLabel: "Candidate created", newValue: payload.name, metadata: { candidate_name: payload.name } });
     }
-
+    if (uploadedCvName) await logActivity({ entityType: "candidate", entityId: savedId, actionType: "cv_uploaded", actionLabel: "CV uploaded", newValue: uploadedCvName, metadata: { candidate_name: payload.name, cv_url: cvUrl } });
     if (!editingId && formProjectIds.length > 0) {
       const rows = formProjectIds.map((projectId) => ({ candidate_id: savedId, project_id: projectId, status: "New" }));
       const { error } = await supabase.from("candidate_projects").insert(rows);
-      if (error) setMessage("Kandydat zapisany, ale nie udało się przypisać projektów: " + error.message);
+      if (error) setMessage("Kandydat zapisany, ale nie udalo sie przypisac projektow: " + error.message);
+      else await Promise.all(formProjectIds.map((projectId) => logActivity({ entityType: "candidate", entityId: savedId, actionType: "candidate_added_to_project", actionLabel: "Candidate added to project", newValue: getProjectName(projects.find((project) => project.id === projectId)), metadata: { candidate_name: payload.name, project_id: projectId } })));
     }
-
-    setForm(emptyCandidate);
-    setEditingId(null);
-    setFormProjectIds([]);
-    if (cvInputRef.current) cvInputRef.current.value = "";
-    setActiveTab("candidates");
-    setMessage(editingId ? "Kandydat zaktualizowany" : "Kandydat dodany");
-    refreshAll();
+    setForm(emptyCandidate); setEditingId(null); setFormProjectIds([]); if (cvInputRef.current) cvInputRef.current.value = ""; setActiveTab("candidates"); setMessage(editingId ? "Kandydat zaktualizowany" : "Kandydat dodany"); refreshAll();
   };
 
   const startEditCandidate = (candidate) => {
@@ -508,28 +529,27 @@ export default function MiniATSApp() {
   };
 
   const deleteCandidate = async (candidate) => {
-    if (!confirm(`Usunąć kandydata: ${candidate.name}?`)) return;
+    if (!confirm("Usunac kandydata: " + candidate.name + "?")) return;
     await supabase.from("candidate_projects").delete().eq("candidate_id", candidate.id);
     const { error } = await supabase.from("candidates").delete().eq("id", candidate.id);
-    if (error) setMessage("Nie udało się usunąć kandydata: " + error.message);
-    else refreshAll();
+    if (error) setMessage("Nie udalo sie usunac kandydata: " + error.message);
+    else { await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "candidate_deleted", actionLabel: "Candidate deleted", oldValue: candidate.name, metadata: { candidate_name: candidate.name } }); refreshAll(); }
   };
 
   const toggleFavorite = async (candidate) => {
     const next = !candidate.favorite;
     setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, favorite: next } : item)));
     const { error } = await supabase.from("candidates").update({ favorite: next }).eq("id", candidate.id);
-    if (error) {
-      setMessage("Błąd shortlisty: " + error.message);
-      refreshAll();
-    }
+    if (error) { setMessage("Blad shortlisty: " + error.message); refreshAll(); }
+    else await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? "shortlist_added" : "shortlist_removed", actionLabel: next ? "Shortlist added" : "Shortlist removed", oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name } });
   };
 
   const updateCandidateStatus = async (candidate, status) => {
+    const oldStatus = candidate.status || "New";
     setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, status } : item)));
     const { error } = await supabase.from("candidates").update({ status }).eq("id", candidate.id);
-    if (error) setMessage("Nie udało się zmienić statusu: " + error.message);
-    else refreshAll();
+    if (error) setMessage("Nie udalo sie zmienic statusu: " + error.message);
+    else { if (oldStatus !== status) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Status changed", oldValue: oldStatus, newValue: status, metadata: { candidate_name: candidate.name } }); refreshAll(); }
   };
 
   const recommendationRelation = (candidate, relation = null) => {
@@ -549,44 +569,41 @@ export default function MiniATSApp() {
     const target = recommendationRelation(candidate, relation);
     if (!target?.id) return setMessage("Wybierz projekt albo kliknij diament przy konkretnym projekcie kandydata.");
     const next = !target.recommended_to_client;
-    setCandidates((prev) =>
-      prev.map((item) =>
-        item.id === candidate.id
-          ? { ...item, candidate_projects: item.candidate_projects?.map((cp) => (cp.id === target.id ? { ...cp, recommended_to_client: next } : cp)) }
-          : item
-      )
-    );
+    const projectName = getProjectName(target.Projekty || projects.find((project) => project.id === target.project_id));
+    setCandidates((prev) => prev.map((item) => item.id === candidate.id ? { ...item, candidate_projects: item.candidate_projects?.map((cp) => (cp.id === target.id ? { ...cp, recommended_to_client: next } : cp)) } : item));
     const { error } = await supabase.from("candidate_projects").update({ recommended_to_client: next }).eq("id", target.id);
-    if (error) {
-      setMessage("Błąd rekomendacji: " + error.message);
-      refreshAll();
-    }
+    if (error) { setMessage("Blad rekomendacji: " + error.message); refreshAll(); }
+    else await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? "recommended_added" : "recommended_removed", actionLabel: next ? "Candidate marked as recommended" : "Candidate recommendation removed", oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name, project_id: target.project_id, project_name: projectName, relation_id: target.id } });
   };
 
   const assignProject = async (candidateId) => {
-    const projectId = selectedProjects[candidateId];
-    if (!projectId) return setMessage("Najpierw wybierz projekt");
+    const projectId = selectedProjects[candidateId]; if (!projectId) return setMessage("Najpierw wybierz projekt");
     const candidate = candidates.find((item) => item.id === candidateId);
-    if (candidate?.candidate_projects?.some((relation) => relation.project_id === projectId)) return setMessage("Ten projekt jest już przypisany");
+    if (candidate?.candidate_projects?.some((relation) => relation.project_id === projectId)) return setMessage("Ten projekt jest juz przypisany");
+    const projectName = getProjectName(projects.find((project) => project.id === projectId));
     const { error } = await supabase.from("candidate_projects").insert([{ candidate_id: candidateId, project_id: projectId, status: "New" }]);
-    if (error) setMessage("Błąd przypisania projektu: " + error.message);
-    else {
-      setSelectedProjects((prev) => ({ ...prev, [candidateId]: "" }));
-      refreshAll();
-    }
+    if (error) setMessage("Blad przypisania projektu: " + error.message);
+    else { await logActivity({ entityType: "candidate", entityId: candidateId, actionType: "candidate_added_to_project", actionLabel: "Candidate added to project", newValue: projectName, metadata: { candidate_name: candidate?.name || "", project_id: projectId, project_name: projectName } }); setSelectedProjects((prev) => ({ ...prev, [candidateId]: "" })); refreshAll(); }
   };
 
   const removeCandidateFromProject = async (relationId) => {
-    if (!confirm("Usunąć projekt z kandydata?")) return;
+    if (!confirm("Usunac projekt z kandydata?")) return;
+    const context = getRelationContext(relationId); const projectName = getProjectName(context.project);
     const { error } = await supabase.from("candidate_projects").delete().eq("id", relationId);
-    if (error) setMessage("Błąd usuwania projektu z kandydata: " + error.message);
-    else refreshAll();
+    if (error) setMessage("Blad usuwania projektu z kandydata: " + error.message);
+    else { if (context.candidate?.id) await logActivity({ entityType: "candidate", entityId: context.candidate.id, actionType: "candidate_removed_from_project", actionLabel: "Candidate removed from project", oldValue: projectName, metadata: { candidate_name: context.candidate.name, project_id: context.relation?.project_id, project_name: projectName, relation_id: relationId } }); refreshAll(); }
   };
 
   const updateProjectRelation = async (relationId, payload) => {
+    const context = getRelationContext(relationId); const oldRelation = context.relation || {};
     const { error } = await supabase.from("candidate_projects").update(payload).eq("id", relationId);
-    if (error) setMessage("Błąd zapisu projektu kandydata: " + error.message);
-    else refreshAll();
+    if (error) setMessage("Blad zapisu projektu kandydata: " + error.message);
+    else {
+      const meta = { candidate_name: context.candidate?.name || "", project_id: oldRelation.project_id, project_name: getProjectName(context.project), relation_id: relationId };
+      if (Object.prototype.hasOwnProperty.call(payload, "status") && oldRelation.status !== payload.status) await logActivity({ entityType: "candidate", entityId: context.candidate?.id || relationId, actionType: "status_changed", actionLabel: "Project status changed", oldValue: oldRelation.status || "New", newValue: payload.status, metadata: meta });
+      for (const field of ["notes", "interview_summary", "recruiter_notes"]) if (Object.prototype.hasOwnProperty.call(payload, field) && (oldRelation[field] || "") !== (payload[field] || "")) await logActivity({ entityType: "candidate", entityId: context.candidate?.id || relationId, actionType: "notes_changed", actionLabel: field.replace(/_/g, " ") + " changed", oldValue: oldRelation[field] || "", newValue: payload[field] || "", metadata: { ...meta, field } });
+      refreshAll();
+    }
   };
 
   const toggleProjectSection = (candidateId) => {
@@ -604,31 +621,20 @@ export default function MiniATSApp() {
   const closeModal = () => preserveScroll(() => setEnlargedCandidateId(null));
 
   const addClient = async () => {
-    if (!newClientName.trim()) return setMessage("Podaj nazwę klienta");
-    const payload = {
-      name: newClientName.trim(),
-      osoba_do_kontaktu: newClientContact.trim(),
-      email: newClientEmail.trim(),
-      telefon: newClientPhone.trim(),
-      notatki: newClientNotes.trim(),
-    };
-    const { error } = await supabase.from("clients").insert([payload]);
-    if (error) return setMessage("Błąd dodawania klienta: " + error.message);
-    setNewClientName("");
-    setNewClientContact("");
-    setNewClientEmail("");
-    setNewClientPhone("");
-    setNewClientNotes("");
-    setMessage("Klient dodany");
-    refreshAll();
+    if (!newClientName.trim()) return setMessage("Podaj nazwe klienta");
+    const payload = { name: newClientName.trim(), osoba_do_kontaktu: newClientContact.trim(), email: newClientEmail.trim(), telefon: newClientPhone.trim(), notatki: newClientNotes.trim() };
+    const { data, error } = await supabase.from("clients").insert([payload]).select().single();
+    if (error) return setMessage("Blad dodawania klienta: " + error.message);
+    await logActivity({ entityType: "client", entityId: data?.id || payload.name, actionType: "client_created", actionLabel: "Client created", newValue: payload.name, metadata: { client_name: payload.name } });
+    setNewClientName(""); setNewClientContact(""); setNewClientEmail(""); setNewClientPhone(""); setNewClientNotes(""); setMessage("Klient dodany"); refreshAll();
   };
 
   const deleteClient = async (client) => {
-    if (!confirm(`Usunąć klienta: ${client.name}? Projekty zostaną bez klienta.`)) return;
+    if (!confirm("Usunac klienta: " + client.name + "? Projekty zostana bez klienta.")) return;
     await supabase.from("Projekty").update({ client_id: null }).eq("client_id", client.id);
     const { error } = await supabase.from("clients").delete().eq("id", client.id);
-    if (error) setMessage("Błąd usuwania klienta: " + error.message);
-    else refreshAll();
+    if (error) setMessage("Blad usuwania klienta: " + error.message);
+    else { await logActivity({ entityType: "client", entityId: client.id, actionType: "client_deleted", actionLabel: "Client deleted", oldValue: client.name, metadata: { client_name: client.name } }); refreshAll(); }
   };
 
   const projectDraft = (project) =>
@@ -643,46 +649,33 @@ export default function MiniATSApp() {
   };
 
   const addProject = async () => {
-    if (!newProjectName.trim()) return setMessage("Podaj nazwę projektu");
-    const payload = {
-      name: newProjectName.trim(),
-      client_id: newProjectClientId || null,
-      project_notes: newProjectNotes.trim(),
-      candidate_requirements: newProjectRequirements.trim(),
-      ai_search_summary: newProjectAiSummary.trim(),
-    };
-    const { error } = await supabase.from("Projekty").insert([payload]);
-    if (error) return setMessage("Błąd dodawania projektu: " + error.message);
-    setNewProjectName("");
-    setNewProjectClientId("");
-    setNewProjectNotes("");
-    setNewProjectRequirements("");
-    setNewProjectAiSummary("");
-    setMessage("Projekt dodany");
-    refreshAll();
+    if (!newProjectName.trim()) return setMessage("Podaj nazwe projektu");
+    const payload = { name: newProjectName.trim(), client_id: newProjectClientId || null, project_notes: newProjectNotes.trim(), candidate_requirements: newProjectRequirements.trim(), ai_search_summary: newProjectAiSummary.trim() };
+    const { data, error } = await supabase.from("Projekty").insert([payload]).select().single();
+    if (error) return setMessage("Blad dodawania projektu: " + error.message);
+    await logActivity({ entityType: "project", entityId: data?.id || payload.name, actionType: "project_created", actionLabel: "Project created", newValue: payload.name, metadata: { project_name: payload.name, client_id: payload.client_id } });
+    setNewProjectName(""); setNewProjectClientId(""); setNewProjectNotes(""); setNewProjectRequirements(""); setNewProjectAiSummary(""); setMessage("Projekt dodany"); refreshAll();
   };
 
   const updateProjectClient = async (projectId, clientId) => {
-    const { error } = await supabase.from("Projekty").update({ client_id: clientId || null }).eq("id", projectId);
-    if (error) setMessage("Błąd przypisania klienta: " + error.message);
-    else refreshAll();
+    const project = projects.find((item) => item.id === projectId); const oldClientName = getClientName(project?.client_id); const nextClientId = clientId || null; const newClientNameValue = getClientName(nextClientId);
+    const { error } = await supabase.from("Projekty").update({ client_id: nextClientId }).eq("id", projectId);
+    if (error) setMessage("Blad przypisania klienta: " + error.message);
+    else { if ((project?.client_id || null) !== nextClientId) await logActivity({ entityType: "project", entityId: projectId, actionType: "project_client_changed", actionLabel: "Project client changed", oldValue: oldClientName, newValue: newClientNameValue, metadata: { project_name: getProjectName(project), old_client_id: project?.client_id || null, new_client_id: nextClientId } }); refreshAll(); }
   };
 
   const saveProjectDetails = async (project) => {
-    const { error } = await supabase.from("Projekty").update(projectDraft(project)).eq("id", project.id);
-    if (error) setMessage("Błąd zapisu projektu: " + error.message);
-    else {
-      setMessage("Projekt zapisany");
-      refreshAll();
-    }
+    const draft = projectDraft(project); const { error } = await supabase.from("Projekty").update(draft).eq("id", project.id);
+    if (error) setMessage("Blad zapisu projektu: " + error.message);
+    else { await logActivity({ entityType: "project", entityId: project.id, actionType: "project_edited", actionLabel: "Project edited", metadata: { project_name: getProjectName(project) } }); for (const field of ["project_notes", "candidate_requirements", "ai_search_summary"]) if ((project[field] || "") !== (draft[field] || "")) await logActivity({ entityType: "project", entityId: project.id, actionType: "notes_changed", actionLabel: field.replace(/_/g, " ") + " changed", oldValue: project[field] || "", newValue: draft[field] || "", metadata: { project_name: getProjectName(project), field } }); setMessage("Projekt zapisany"); refreshAll(); }
   };
 
   const deleteProject = async (project) => {
-    if (!confirm(`Usunąć projekt: ${getProjectName(project)}? Kandydaci nie zostaną usunięci.`)) return;
+    if (!confirm("Usunac projekt: " + getProjectName(project) + "? Kandydaci nie zostana usunieci.")) return;
     await supabase.from("candidate_projects").delete().eq("project_id", project.id);
     const { error } = await supabase.from("Projekty").delete().eq("id", project.id);
-    if (error) setMessage("Błąd usuwania projektu: " + error.message);
-    else refreshAll();
+    if (error) setMessage("Blad usuwania projektu: " + error.message);
+    else { await logActivity({ entityType: "project", entityId: project.id, actionType: "project_deleted", actionLabel: "Project deleted", oldValue: getProjectName(project), metadata: { project_name: getProjectName(project) } }); refreshAll(); }
   };
 
   const toggleProjectDetails = (project) => {
@@ -700,8 +693,9 @@ export default function MiniATSApp() {
   };
 
   const generateProjectAiSummary = (project) => {
-    const summary = `AI sourcing summary for ${getProjectName(project)}: target stack, seniority, location, availability and must-have requirements should be matched against candidate notes, CV data, project history and recruiter feedback.`;
+    const summary = "AI sourcing summary for " + getProjectName(project) + ": target stack, seniority, location, availability and must-have requirements should be matched against candidate notes, CV data, project history and recruiter feedback.";
     updateProjectDraft(project, "ai_search_summary", summary);
+    void logActivity({ entityType: "project", entityId: project.id, actionType: "ai_summary_generated", actionLabel: "AI summary generated", newValue: summary, metadata: { project_name: getProjectName(project) } });
   };
 
   const applyChip = (chip) => {
@@ -900,6 +894,7 @@ export default function MiniATSApp() {
       try {
         const parsed = await parseCvFile(modalCvFile);
         setDraft((prev) => ({ ...prev, details: mergeParsed(prev.details, parsed) }));
+        await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "cv_parsed", actionLabel: "CV parsed with AI", metadata: { candidate_name: candidate.name, file_name: modalCvFile?.name || "CV" } });
         setFeedback("CV parsed. Review fields before saving.");
       } catch (error) {
         setFeedback("AI CV failed: " + error.message);
@@ -942,6 +937,7 @@ export default function MiniATSApp() {
       }
 
       for (const [relationId, relation] of Object.entries(draft.projectRelations)) {
+        const previousRelation = candidate.candidate_projects?.find((item) => item.id === relationId) || {};
         const { error } = await supabase
           .from("candidate_projects")
           .update({
@@ -956,9 +952,15 @@ export default function MiniATSApp() {
           setSaving(false);
           return setFeedback("Project save failed: " + error.message);
         }
+        if ((previousRelation.status || "New") !== (relation.status || "New")) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Project status changed", oldValue: previousRelation.status || "New", newValue: relation.status || "New", metadata: { candidate_name: candidate.name, project_name: getProjectName(previousRelation.Projekty || relation.Projekty), relation_id: relationId, source: "modal" } });
+        if (Boolean(previousRelation.recommended_to_client) !== Boolean(relation.recommended_to_client)) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: relation.recommended_to_client ? "recommended_added" : "recommended_removed", actionLabel: relation.recommended_to_client ? "Candidate marked as recommended" : "Candidate recommendation removed", oldValue: Boolean(previousRelation.recommended_to_client), newValue: Boolean(relation.recommended_to_client), metadata: { candidate_name: candidate.name, project_name: getProjectName(previousRelation.Projekty || relation.Projekty), relation_id: relationId, source: "modal" } });
       }
       setSaving(false);
       setFeedback("Saved successfully");
+      await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "candidate_edited", actionLabel: "Candidate edited", metadata: { candidate_name: candidate.name, source: "modal" } });
+      if ((candidate.status || "New") !== (draft.details.status || "New")) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Status changed", oldValue: candidate.status || "New", newValue: draft.details.status || "New", metadata: { candidate_name: candidate.name, source: "modal" } });
+      if ((candidate.notatki || "") !== (draft.details.notatki || "")) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "notes_changed", actionLabel: "Candidate notes changed", oldValue: candidate.notatki || "", newValue: draft.details.notatki || "", metadata: { candidate_name: candidate.name, source: "modal" } });
+      if (modalCvFile) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "cv_uploaded", actionLabel: "CV uploaded", newValue: modalCvFile.name, metadata: { candidate_name: candidate.name, cv_url: cvUrl, source: "modal" } });
       refreshAll();
     };
 
@@ -974,6 +976,7 @@ export default function MiniATSApp() {
               </div>
               <div className="flex flex-wrap items-center gap-2 md:justify-end">
                 {feedback && <span className={`rounded-full px-3 py-2 text-xs font-black ${feedback.includes("failed") || feedback.includes("Choose") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>{feedback}</span>}
+                <button type="button" onClick={() => openActivityHistory("candidate", candidate.id, draft.details.name || candidate.name || "Kandydat")} className="rounded-2xl border bg-white px-4 py-3 text-sm font-black hover:bg-slate-50">Historia</button>
                 <button type="button" onClick={saveModal} disabled={saving} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">{saving ? "Saving..." : "Save changes"}</button>
                 <button type="button" onClick={closeModal} className="rounded-2xl border bg-white px-5 py-3 text-sm font-black hover:bg-slate-50">Close</button>
               </div>
@@ -1042,6 +1045,10 @@ export default function MiniATSApp() {
       </div>
     );
   };
+
+  const ActivityHistoryModal = () => (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm"><div className="max-h-[82vh] w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl"><div className="flex items-center justify-between gap-3 border-b border-slate-200 p-5"><div><h3 className="text-xl font-black text-slate-950">Historia</h3><p className="text-sm font-semibold text-slate-500">{historyModal?.title}</p></div><button type="button" onClick={closeActivityHistory} className="rounded-2xl border bg-white px-4 py-2 text-sm font-black hover:bg-slate-50">Zamknij</button></div><div className="max-h-[calc(82vh-92px)] overflow-y-auto p-5">{historyLoading && <div className="rounded-2xl bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">Ladowanie historii...</div>}{!historyLoading && historyItems.length === 0 && <div className="rounded-2xl bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">Brak zapisanej historii.</div>}{!historyLoading && historyItems.length > 0 && <div className="grid gap-2">{historyItems.map((item) => <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs font-black uppercase tracking-wide text-slate-400">{formatHistoryDate(item.created_at)}</div><div className="mt-1 text-sm font-black text-slate-900">{item.action_label}</div>{(item.old_value || item.new_value) && <div className="mt-1 text-sm text-slate-600">{item.old_value && <span>{item.old_value}</span>}{item.old_value && item.new_value && <span> -&gt; </span>}{item.new_value && <span>{item.new_value}</span>}</div>}</div>)}</div>}</div></div></div>
+  );
 
   const AddCandidateView = () => (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
@@ -1112,7 +1119,7 @@ export default function MiniATSApp() {
   const ProjectsView = () => (
     <>
       <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm"><h2 className="mb-4 text-xl font-black">Projekty</h2><div className="grid gap-3 md:grid-cols-4"><input className="rounded-xl border p-3 md:col-span-2" placeholder="Nazwa projektu" value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} /><select className="rounded-xl border p-3" value={newProjectClientId} onChange={(event) => setNewProjectClientId(event.target.value)}><option value="">Bez klienta</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select><button type="button" onClick={addProject} className="rounded-xl bg-green-600 px-4 py-2 font-bold text-white hover:bg-green-700">Dodaj projekt</button><textarea className="min-h-24 rounded-xl border p-3 md:col-span-2" placeholder="Project notes" value={newProjectNotes} onChange={(event) => setNewProjectNotes(event.target.value)} /><textarea className="min-h-24 rounded-xl border p-3" placeholder="Candidate requirements" value={newProjectRequirements} onChange={(event) => setNewProjectRequirements(event.target.value)} /><textarea className="min-h-24 rounded-xl border p-3" placeholder="AI search summary" value={newProjectAiSummary} onChange={(event) => setNewProjectAiSummary(event.target.value)} /></div><input className="mt-4 w-full rounded-xl border p-3" placeholder="Szukaj projektu albo klienta..." value={projectSearch} onChange={(event) => setProjectSearch(event.target.value)} /></section>
-      <main className="grid gap-4 lg:grid-cols-2">{filteredProjects.map((project) => { const projectCandidates = candidates.map((candidate) => ({ candidate, relation: candidate.candidate_projects?.find((relation) => relation.project_id === project.id) })).filter((item) => item.relation); const detailsOpen = Boolean(projectDetailsOpen[project.id]); const candidatesOpen = Boolean(projectCandidatesOpen[project.id]); const active = activeProjectId === project.id || detailsOpen || candidatesOpen; const draft = projectDraft(project); return <article key={project.id} className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition ${active ? "border-teal-300 ring-4 ring-teal-50" : "border-slate-200"}`}><div className={`h-2 bg-gradient-to-r ${active ? "from-teal-600 to-blue-500" : "from-slate-300 to-slate-100"}`} /><div className="p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-black text-slate-950">{getProjectName(project)}</h3><p className="mt-1 text-sm text-slate-500">Klient: <b>{getProjectClientName(project)}</b></p><p className="mt-1 text-sm text-slate-500">Kandydaci: <b>{projectCandidates.length}</b></p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => toggleProjectDetails(project)} className={`rounded-full px-3 py-1 text-sm font-bold ${detailsOpen ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`}>{detailsOpen ? "Ukryj szczegóły" : "Project Details"}</button><button type="button" onClick={() => toggleProjectCandidates(project.id)} className={`rounded-full px-3 py-1 text-sm font-bold ${candidatesOpen ? "bg-teal-600 text-white" : "border bg-white hover:bg-slate-50"}`}>Kandydaci ({projectCandidates.length})</button><button type="button" onClick={() => deleteProject(project)} className="rounded-full border border-red-200 bg-white px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-50">Usuń</button></div></div><div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3"><label className="mb-1 block text-sm font-bold text-slate-700">Klient projektu</label><select className="w-full rounded-xl border bg-white p-2" value={project.client_id || ""} onChange={(event) => updateProjectClient(project.id, event.target.value)}><option value="">Bez klienta</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></div>{detailsOpen && <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h4 className="font-black">Project Details</h4><button type="button" onClick={() => generateProjectAiSummary(project)} className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-700">Generate AI sourcing summary</button></div><div className="grid gap-3"><textarea className="min-h-28 rounded-xl border p-3" value={draft.project_notes} onChange={(event) => updateProjectDraft(project, "project_notes", event.target.value)} placeholder="Project notes" /><textarea className="min-h-28 rounded-xl border p-3" value={draft.candidate_requirements} onChange={(event) => updateProjectDraft(project, "candidate_requirements", event.target.value)} placeholder="Candidate requirements" /><textarea className="min-h-28 rounded-xl border p-3" value={draft.ai_search_summary} onChange={(event) => updateProjectDraft(project, "ai_search_summary", event.target.value)} placeholder="AI search summary" /></div><button type="button" onClick={() => saveProjectDetails(project)} className="mt-4 rounded-xl bg-slate-900 px-5 py-3 font-bold text-white">SAVE</button></section>}<div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3"><button type="button" onClick={() => toggleProjectCandidates(project.id)} className="flex w-full items-center justify-between text-left"><span><span className="block text-sm font-black">Lista kandydatów</span><span className="text-xs text-slate-500">{projectCandidates.length} przypisanych kandydatów</span></span><span className="rounded-full bg-white px-3 py-1 text-xs font-bold shadow-sm">{candidatesOpen ? "Zwiń" : "Rozwiń"}</span></button>{candidatesOpen && <div className="mt-3 grid gap-2">{projectCandidates.map(({ candidate, relation }) => <button key={relation.id} type="button" onClick={() => openModal(candidate.id)} className="flex items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2 text-left shadow-sm hover:shadow-md"><span className="min-w-0 truncate font-black text-slate-900">{candidate.name || "Kandydat bez nazwy"}</span><StatusBadge status={relation.status || candidate.status || "New"} compact /></button>)}</div>}</div></div></article>; })}</main>
+      <main className="grid gap-4 lg:grid-cols-2">{filteredProjects.map((project) => { const projectCandidates = candidates.map((candidate) => ({ candidate, relation: candidate.candidate_projects?.find((relation) => relation.project_id === project.id) })).filter((item) => item.relation); const detailsOpen = Boolean(projectDetailsOpen[project.id]); const candidatesOpen = Boolean(projectCandidatesOpen[project.id]); const active = activeProjectId === project.id || detailsOpen || candidatesOpen; const draft = projectDraft(project); return <article key={project.id} className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition ${active ? "border-teal-300 ring-4 ring-teal-50" : "border-slate-200"}`}><div className={`h-2 bg-gradient-to-r ${active ? "from-teal-600 to-blue-500" : "from-slate-300 to-slate-100"}`} /><div className="p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-black text-slate-950">{getProjectName(project)}</h3><p className="mt-1 text-sm text-slate-500">Klient: <b>{getProjectClientName(project)}</b></p><p className="mt-1 text-sm text-slate-500">Kandydaci: <b>{projectCandidates.length}</b></p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => toggleProjectDetails(project)} className={`rounded-full px-3 py-1 text-sm font-bold ${detailsOpen ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`}>{detailsOpen ? "Ukryj szczegóły" : "Project Details"}</button><button type="button" onClick={() => toggleProjectCandidates(project.id)} className={`rounded-full px-3 py-1 text-sm font-bold ${candidatesOpen ? "bg-teal-600 text-white" : "border bg-white hover:bg-slate-50"}`}>Kandydaci ({projectCandidates.length})</button><button type="button" onClick={() => deleteProject(project)} className="rounded-full border border-red-200 bg-white px-3 py-1 text-sm font-bold text-red-600 hover:bg-red-50">Usuń</button></div></div><div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3"><label className="mb-1 block text-sm font-bold text-slate-700">Klient projektu</label><select className="w-full rounded-xl border bg-white p-2" value={project.client_id || ""} onChange={(event) => updateProjectClient(project.id, event.target.value)}><option value="">Bez klienta</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></div>{detailsOpen && <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div className="flex flex-wrap items-center gap-2"><h4 className="font-black">Project Details</h4><button type="button" onClick={() => openActivityHistory("project", project.id, getProjectName(project))} className="rounded-xl border bg-white px-3 py-2 text-sm font-bold hover:bg-slate-50">Historia</button></div><button type="button" onClick={() => generateProjectAiSummary(project)} className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-bold text-teal-700">Generate AI sourcing summary</button></div><div className="grid gap-3"><textarea className="min-h-28 rounded-xl border p-3" value={draft.project_notes} onChange={(event) => updateProjectDraft(project, "project_notes", event.target.value)} placeholder="Project notes" /><textarea className="min-h-28 rounded-xl border p-3" value={draft.candidate_requirements} onChange={(event) => updateProjectDraft(project, "candidate_requirements", event.target.value)} placeholder="Candidate requirements" /><textarea className="min-h-28 rounded-xl border p-3" value={draft.ai_search_summary} onChange={(event) => updateProjectDraft(project, "ai_search_summary", event.target.value)} placeholder="AI search summary" /></div><button type="button" onClick={() => saveProjectDetails(project)} className="mt-4 rounded-xl bg-slate-900 px-5 py-3 font-bold text-white">SAVE</button></section>}<div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3"><button type="button" onClick={() => toggleProjectCandidates(project.id)} className="flex w-full items-center justify-between text-left"><span><span className="block text-sm font-black">Lista kandydatów</span><span className="text-xs text-slate-500">{projectCandidates.length} przypisanych kandydatów</span></span><span className="rounded-full bg-white px-3 py-1 text-xs font-bold shadow-sm">{candidatesOpen ? "Zwiń" : "Rozwiń"}</span></button>{candidatesOpen && <div className="mt-3 grid gap-2">{projectCandidates.map(({ candidate, relation }) => <button key={relation.id} type="button" onClick={() => openModal(candidate.id)} className="flex items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2 text-left shadow-sm hover:shadow-md"><span className="min-w-0 truncate font-black text-slate-900">{candidate.name || "Kandydat bez nazwy"}</span><StatusBadge status={relation.status || candidate.status || "New"} compact /></button>)}</div>}</div></div></article>; })}</main>
     </>
   );
 
@@ -1130,7 +1137,7 @@ export default function MiniATSApp() {
   }
 
   if (clientView) {
-    return <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8"><div className="mx-auto max-w-6xl"><header className="mb-8 rounded-3xl bg-white p-6 shadow-sm"><h1 className="text-3xl font-black">Mini ATS kandydatów</h1><p className="mt-2 text-slate-500">Shortlista kandydatów - {clientProjectName}</p></header>{CandidatesView()}</div>{enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}</div>;
+    return <div className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-8"><div className="mx-auto max-w-6xl"><header className="mb-8 rounded-3xl bg-white p-6 shadow-sm"><h1 className="text-3xl font-black">Mini ATS kandydatów</h1><p className="mt-2 text-slate-500">Shortlista kandydatów - {clientProjectName}</p></header>{CandidatesView()}</div>{enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}{historyModal && <ActivityHistoryModal />}</div>;
   }
 
   return (
@@ -1140,6 +1147,7 @@ export default function MiniATSApp() {
         <main className="w-full p-4 md:p-8"><div className="mx-auto max-w-6xl"><header className="mb-8 rounded-3xl bg-white p-6 shadow-sm"><h1 className="text-3xl font-black md:text-4xl">{activeTab === "add" && "Dodaj kandydata"}{activeTab === "candidates" && "Baza kandydatów"}{activeTab === "projects" && "Projekty"}{activeTab === "clients" && "Klienci"}</h1><p className="mt-2 text-slate-500">Dane zapisują się w Supabase.</p><div className="mt-4 grid grid-cols-2 gap-2 md:hidden"><button type="button" onClick={() => setActiveTab("add")} className="rounded-xl border p-2 font-bold">Dodaj</button><button type="button" onClick={() => setActiveTab("candidates")} className="rounded-xl border p-2 font-bold">Kandydaci</button><button type="button" onClick={() => setActiveTab("projects")} className="rounded-xl border p-2 font-bold">Projekty</button><button type="button" onClick={() => setActiveTab("clients")} className="rounded-xl border p-2 font-bold">Klienci</button></div></header>{message && <p className="mb-6 rounded-2xl bg-white p-4 text-sm font-semibold text-slate-700 shadow-sm">{message}</p>}{activeTab === "add" && AddCandidateView()}{activeTab === "candidates" && CandidatesView()}{activeTab === "projects" && ProjectsView()}{activeTab === "clients" && ClientsView()}</div></main>
       </div>
       {enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}
+      {historyModal && <ActivityHistoryModal />}
     </div>
   );
 }
