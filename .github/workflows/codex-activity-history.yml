@@ -1,197 +1,34 @@
-name: Codex Activity History Patch
+name: Codex Activity History Apply
 
 on:
   push:
     branches:
       - main
     paths:
-      - .github/workflows/codex-activity-history.yml
+      - codex-trigger-activity-history.txt
 
 permissions:
   contents: write
 
 jobs:
-  patch:
+  apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch activity history
+      - name: Apply activity history files
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const path = 'src/App.jsx';
-          let s = fs.readFileSync(path, 'utf8');
-          function fail(m){throw new Error(m)}
-          function replaceOnce(a,b,label){const n=s.split(a).length-1;if(n!==1)fail(`${label}:${n}`);s=s.replace(a,b)}
-          function insertAfter(a,b,label){const i=s.indexOf(a);if(i<0)fail(label);s=s.slice(0,i+a.length)+b+s.slice(i+a.length)}
-          function replaceFunction(name,repl){const start=s.indexOf(`  const ${name} = `);if(start<0)fail('missing '+name);let end=-1;for(const needle of ['\n\n  const ','\n\n  useEffect','\n\n  if (','\n\n  return']){const p=s.indexOf(needle,start+12);if(p>=0&&(end<0||p<end))end=p}if(end<0)fail('end '+name);s=s.slice(0,start)+repl+s.slice(end)}
-
-          insertAfter(`function StatusBadge({ status, compact = false }) {
-            return (
-              <span className={\`inline-flex items-center gap-2 rounded-full border font-black shadow-sm \${compact ? "px-3 py-1 text-xs" : "px-4 py-2 text-sm"} \${statusClass(status)}\`}>
-                <span className="h-2 w-2 rounded-full bg-white/90" />
-                {status || "New"}
-              </span>
-            );
-          }
-          `.replace(/^ {10}/gm, ''), `
-          function formatHistoryDate(value) {
-            if (!value) return "";
-            return new Date(value).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-          }
-
-          function formatHistoryValue(value) {
-            if (value === undefined || value === null || value === "") return "";
-            if (typeof value === "object") return JSON.stringify(value);
-            return String(value);
-          }
-          `.replace(/^ {10}/gm, ''), 'helpers');
-
-          replaceOnce(`  const [enlargedCandidateId, setEnlargedCandidateId] = useState(null);
-          const restoreScrollYRef = useRef(null);`.replace(/^ {10}/gm, ''), `  const [enlargedCandidateId, setEnlargedCandidateId] = useState(null);
-          const [historyModal, setHistoryModal] = useState(null);
-          const [historyItems, setHistoryItems] = useState([]);
-          const [historyLoading, setHistoryLoading] = useState(false);
-          const restoreScrollYRef = useRef(null);`.replace(/^ {10}/gm, ''), 'state');
-
-          insertAfter(`  const getClientName = (clientId) => clients.find((client) => client.id === clientId)?.name || "Bez klienta";
-          const getProjectClientName = (project) => getClientName(project?.client_id);
-          `.replace(/^ {10}/gm, ''), `
-          const logActivity = async ({ entityType = "system", entityId = "system", actionType, actionLabel, oldValue = null, newValue = null, metadata = {} }) => {
-            if (!actionType || !actionLabel) return;
-            const row = { entity_type: entityType, entity_id: String(entityId || "system"), action_type: actionType, action_label: actionLabel, old_value: oldValue === undefined || oldValue === null ? null : formatHistoryValue(oldValue), new_value: newValue === undefined || newValue === null ? null : formatHistoryValue(newValue), metadata };
-            const { error } = await supabase.from("activity_history").insert([row]);
-            if (error && !["42P01", "PGRST116", "PGRST205"].includes(error.code)) console.warn("Activity history skipped:", error.message);
-          };
-
-          const openActivityHistory = async (entityType, entityId, title) => {
-            preserveScroll(() => setHistoryModal({ entityType, entityId: String(entityId || "system"), title }));
-            setHistoryLoading(true);
-            const { data, error } = await supabase.from("activity_history").select("*").eq("entity_type", entityType).eq("entity_id", String(entityId || "system")).order("created_at", { ascending: false }).limit(80);
-            setHistoryItems(error ? [] : data || []);
-            setHistoryLoading(false);
-          };
-
-          const closeActivityHistory = () => preserveScroll(() => setHistoryModal(null));
-
-          const getRelationContext = (relationId) => {
-            for (const candidate of candidates) {
-              const relation = candidate.candidate_projects?.find((item) => item.id === relationId);
-              if (relation) return { candidate, relation, project: relation.Projekty || projects.find((item) => item.id === relation.project_id) || null };
-            }
-            return { candidate: null, relation: null, project: null };
-          };
-          `.replace(/^ {10}/gm, ''), 'activity');
-
-          insertAfter('      setForm((prev) => mergeParsed(prev, parsed));', '\n      await logActivity({ entityType: "system", entityId: "candidate-form", actionType: "cv_parsed", actionLabel: "CV parsed with AI", metadata: { file_name: form.cv_file?.name || "CV" } });', 'parsecv');
-
-          replaceFunction('toggleFavorite', `  const toggleFavorite = async (candidate) => {
-            const next = !candidate.favorite;
-            setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, favorite: next } : item)));
-            const { error } = await supabase.from("candidates").update({ favorite: next }).eq("id", candidate.id);
-            if (error) { setMessage("Blad shortlisty: " + error.message); refreshAll(); }
-            else await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? "shortlist_added" : "shortlist_removed", actionLabel: next ? "Shortlist added" : "Shortlist removed", oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name } });
-          };`.replace(/^ {10}/gm, ''));
-
-          replaceFunction('updateCandidateStatus', `  const updateCandidateStatus = async (candidate, status) => {
-            const oldStatus = candidate.status || "New";
-            setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, status } : item)));
-            const { error } = await supabase.from("candidates").update({ status }).eq("id", candidate.id);
-            if (error) setMessage("Nie udalo sie zmienic statusu: " + error.message);
-            else { if (oldStatus !== status) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Status changed", oldValue: oldStatus, newValue: status, metadata: { candidate_name: candidate.name } }); refreshAll(); }
-          };`.replace(/^ {10}/gm, ''));
-
-          replaceFunction('toggleRecommended', `  const toggleRecommended = async (candidate, relation = null) => {
-            const target = recommendationRelation(candidate, relation);
-            if (!target?.id) return setMessage("Wybierz projekt albo kliknij diament przy konkretnym projekcie kandydata.");
-            const next = !target.recommended_to_client;
-            const projectName = getProjectName(target.Projekty || projects.find((project) => project.id === target.project_id));
-            setCandidates((prev) => prev.map((item) => item.id === candidate.id ? { ...item, candidate_projects: item.candidate_projects?.map((cp) => (cp.id === target.id ? { ...cp, recommended_to_client: next } : cp)) } : item));
-            const { error } = await supabase.from("candidate_projects").update({ recommended_to_client: next }).eq("id", target.id);
-            if (error) { setMessage("Blad rekomendacji: " + error.message); refreshAll(); }
-            else await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? "recommended_added" : "recommended_removed", actionLabel: next ? "Candidate marked as recommended" : "Candidate recommendation removed", oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name, project_id: target.project_id, project_name: projectName, relation_id: target.id } });
-          };`.replace(/^ {10}/gm, ''));
-
-          replaceFunction('assignProject', `  const assignProject = async (candidateId) => {
-            const projectId = selectedProjects[candidateId]; if (!projectId) return setMessage("Najpierw wybierz projekt");
-            const candidate = candidates.find((item) => item.id === candidateId);
-            if (candidate?.candidate_projects?.some((relation) => relation.project_id === projectId)) return setMessage("Ten projekt jest juz przypisany");
-            const projectName = getProjectName(projects.find((project) => project.id === projectId));
-            const { error } = await supabase.from("candidate_projects").insert([{ candidate_id: candidateId, project_id: projectId, status: "New" }]);
-            if (error) setMessage("Blad przypisania projektu: " + error.message);
-            else { await logActivity({ entityType: "candidate", entityId: candidateId, actionType: "candidate_added_to_project", actionLabel: "Candidate added to project", newValue: projectName, metadata: { candidate_name: candidate?.name || "", project_id: projectId, project_name: projectName } }); setSelectedProjects((prev) => ({ ...prev, [candidateId]: "" })); refreshAll(); }
-          };`.replace(/^ {10}/gm, ''));
-
-          replaceFunction('removeCandidateFromProject', `  const removeCandidateFromProject = async (relationId) => {
-            if (!confirm("Usunac projekt z kandydata?")) return;
-            const context = getRelationContext(relationId); const projectName = getProjectName(context.project);
-            const { error } = await supabase.from("candidate_projects").delete().eq("id", relationId);
-            if (error) setMessage("Blad usuwania projektu z kandydata: " + error.message);
-            else { if (context.candidate?.id) await logActivity({ entityType: "candidate", entityId: context.candidate.id, actionType: "candidate_removed_from_project", actionLabel: "Candidate removed from project", oldValue: projectName, metadata: { candidate_name: context.candidate.name, project_id: context.relation?.project_id, project_name: projectName, relation_id: relationId } }); refreshAll(); }
-          };`.replace(/^ {10}/gm, ''));
-
-          replaceFunction('updateProjectRelation', `  const updateProjectRelation = async (relationId, payload) => {
-            const context = getRelationContext(relationId); const oldRelation = context.relation || {};
-            const { error } = await supabase.from("candidate_projects").update(payload).eq("id", relationId);
-            if (error) setMessage("Blad zapisu projektu kandydata: " + error.message);
-            else {
-              const meta = { candidate_name: context.candidate?.name || "", project_id: oldRelation.project_id, project_name: getProjectName(context.project), relation_id: relationId };
-              if (Object.prototype.hasOwnProperty.call(payload, "status") && oldRelation.status !== payload.status) await logActivity({ entityType: "candidate", entityId: context.candidate?.id || relationId, actionType: "status_changed", actionLabel: "Project status changed", oldValue: oldRelation.status || "New", newValue: payload.status, metadata: meta });
-              for (const field of ["notes", "interview_summary", "recruiter_notes"]) if (Object.prototype.hasOwnProperty.call(payload, field) && (oldRelation[field] || "") !== (payload[field] || "")) await logActivity({ entityType: "candidate", entityId: context.candidate?.id || relationId, actionType: "notes_changed", actionLabel: field.replace(/_/g, " ") + " changed", oldValue: oldRelation[field] || "", newValue: payload[field] || "", metadata: { ...meta, field } });
-              refreshAll();
-            }
-          };`.replace(/^ {10}/gm, ''));
-
-          insertAfter('      for (const [relationId, relation] of Object.entries(draft.projectRelations)) {', '\n        const previousRelation = candidate.candidate_projects?.find((item) => item.id === relationId) || {};', 'modal previous');
-          insertAfter('        if (error) {\n          setSaving(false);\n          return setFeedback("Project save failed: " + error.message);\n        }', '\n        if ((previousRelation.status || "New") !== (relation.status || "New")) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Project status changed", oldValue: previousRelation.status || "New", newValue: relation.status || "New", metadata: { candidate_name: candidate.name, project_name: getProjectName(previousRelation.Projekty || relation.Projekty), relation_id: relationId, source: "modal" } });\n        if (Boolean(previousRelation.recommended_to_client) !== Boolean(relation.recommended_to_client)) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: relation.recommended_to_client ? "recommended_added" : "recommended_removed", actionLabel: relation.recommended_to_client ? "Candidate marked as recommended" : "Candidate recommendation removed", oldValue: Boolean(previousRelation.recommended_to_client), newValue: Boolean(relation.recommended_to_client), metadata: { candidate_name: candidate.name, project_name: getProjectName(previousRelation.Projekty || relation.Projekty), relation_id: relationId, source: "modal" } });', 'modal relation log');
-          insertAfter('        setDraft((prev) => ({ ...prev, details: mergeParsed(prev.details, parsed) }));', '\n        await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "cv_parsed", actionLabel: "CV parsed with AI", metadata: { candidate_name: candidate.name, file_name: modalCvFile?.name || "CV" } });', 'modal cv log');
-          insertAfter('      }\n      setSaving(false);\n      setFeedback("Saved successfully");', '\n      await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "candidate_edited", actionLabel: "Candidate edited", metadata: { candidate_name: candidate.name, source: "modal" } });\n      if ((candidate.status || "New") !== (draft.details.status || "New")) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Status changed", oldValue: candidate.status || "New", newValue: draft.details.status || "New", metadata: { candidate_name: candidate.name, source: "modal" } });\n      if ((candidate.notatki || "") !== (draft.details.notatki || "")) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "notes_changed", actionLabel: "Candidate notes changed", oldValue: candidate.notatki || "", newValue: draft.details.notatki || "", metadata: { candidate_name: candidate.name, source: "modal" } });\n      if (modalCvFile) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "cv_uploaded", actionLabel: "CV uploaded", newValue: modalCvFile.name, metadata: { candidate_name: candidate.name, cv_url: cvUrl, source: "modal" } });', 'modal candidate log');
-
-          replaceOnce('                {feedback && <span className={`rounded-full px-3 py-2 text-xs font-black ${feedback.includes("failed") || feedback.includes("Choose") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>{feedback}</span>}\n                <button type="button" onClick={saveModal}', '                {feedback && <span className={`rounded-full px-3 py-2 text-xs font-black ${feedback.includes("failed") || feedback.includes("Choose") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>{feedback}</span>}\n                <button type="button" onClick={() => openActivityHistory("candidate", candidate.id, draft.details.name || candidate.name || "Kandydat")} className="rounded-2xl border bg-white px-4 py-3 text-sm font-black hover:bg-slate-50">Historia</button>\n                <button type="button" onClick={saveModal}', 'candidate history button');
-
-          const historyComponent = `  const ActivityHistoryModal = () => (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm"><div className="max-h-[82vh] w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl"><div className="flex items-center justify-between gap-3 border-b border-slate-200 p-5"><div><h3 className="text-xl font-black text-slate-950">Historia</h3><p className="text-sm font-semibold text-slate-500">{historyModal?.title}</p></div><button type="button" onClick={closeActivityHistory} className="rounded-2xl border bg-white px-4 py-2 text-sm font-black hover:bg-slate-50">Zamknij</button></div><div className="max-h-[calc(82vh-92px)] overflow-y-auto p-5">{historyLoading && <div className="rounded-2xl bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">Ladowanie historii...</div>}{!historyLoading && historyItems.length === 0 && <div className="rounded-2xl bg-slate-50 p-5 text-center text-sm font-bold text-slate-500">Brak zapisanej historii.</div>}{!historyLoading && historyItems.length > 0 && <div className="grid gap-2">{historyItems.map((item) => <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs font-black uppercase tracking-wide text-slate-400">{formatHistoryDate(item.created_at)}</div><div className="mt-1 text-sm font-black text-slate-900">{item.action_label}</div>{(item.old_value || item.new_value) && <div className="mt-1 text-sm text-slate-600">{item.old_value && <span>{item.old_value}</span>}{item.old_value && item.new_value && <span> -&gt; </span>}{item.new_value && <span>{item.new_value}</span>}</div>}</div>)}</div>}</div></div></div>
-          );
-
-          `.replace(/^ {10}/gm, '');
-          replaceOnce('  const AddCandidateView = () => (', historyComponent + '  const AddCandidateView = () => (', 'history component');
-          replaceOnce('<h4 className="font-black">Project Details</h4><button type="button" onClick={() => generateProjectAiSummary(project)}', '<div className="flex flex-wrap items-center gap-2"><h4 className="font-black">Project Details</h4><button type="button" onClick={() => openActivityHistory("project", project.id, getProjectName(project))} className="rounded-xl border bg-white px-3 py-2 text-sm font-bold hover:bg-slate-50">Historia</button></div><button type="button" onClick={() => generateProjectAiSummary(project)}', 'project history button');
-          replaceOnce('{enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}</div>;', '{enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}{historyModal && <ActivityHistoryModal />}</div>;', 'client render history');
-          replaceOnce('      {enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}\n    </div>', '      {enlargedCandidate && <EditableCandidateModal candidate={enlargedCandidate} />}\n      {historyModal && <ActivityHistoryModal />}\n    </div>', 'main render history');
-
-          fs.writeFileSync(path, s);
-          fs.writeFileSync('supabase-activity-history.sql', `create table if not exists public.activity_history (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  entity_type text not null check (entity_type in ('candidate', 'project', 'client', 'system')),
-  entity_id text not null,
-  action_type text not null,
-  action_label text not null,
-  old_value text,
-  new_value text,
-  metadata jsonb not null default '{}'::jsonb
-);
-
-create index if not exists activity_history_entity_idx on public.activity_history (entity_type, entity_id, created_at desc);
-create index if not exists activity_history_action_idx on public.activity_history (action_type, created_at desc);
-
-alter table public.activity_history enable row level security;
-
-drop policy if exists "Authenticated users can read activity history" on public.activity_history;
-create policy "Authenticated users can read activity history" on public.activity_history for select to authenticated using (true);
-
-drop policy if exists "Authenticated users can insert activity history" on public.activity_history;
-create policy "Authenticated users can insert activity history" on public.activity_history for insert to authenticated with check (true);
-`);
-          NODE
+          cat .codex/activity-history/app.*.b64 | base64 -d > src/App.jsx
+          cat .codex/activity-history/sql.*.b64 | base64 -d > supabase-activity-history.sql
+          rm -rf .codex/activity-history
+          rm -f .github/workflows/codex-activity-history.yml codex-trigger-activity-history.txt
       - name: Build check
         run: |
           npm install
           npm run build
-      - name: Commit patch
+      - name: Commit final files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/App.jsx supabase-activity-history.sql
+          git add -A
           git commit -m "Add ATS activity history tracking" || exit 0
           git push
