@@ -97,6 +97,11 @@ function getProjectName(project) {
   return project?.name || project?.nazwa || "Projekt bez nazwy";
 }
 
+function getLocalDateKey(date = new Date()) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
+}
+
 function getExperience(candidate) {
   const raw = candidate?.doświadczenie || candidate?.doswiadczenie || candidate?.experience || "";
   const match = String(raw).replace(",", ".").match(/\d+(\.\d+)?/);
@@ -277,6 +282,7 @@ export default function MiniATSApp() {
   const [editingId, setEditingId] = useState(null);
   const [formProjectIds, setFormProjectIds] = useState([]);
   const [selectedProjects, setSelectedProjects] = useState({});
+  const [reminderDrafts, setReminderDrafts] = useState({});
   const [parsingCv, setParsingCv] = useState(false);
   const [parsingLinkedin, setParsingLinkedin] = useState(false);
 
@@ -377,6 +383,10 @@ export default function MiniATSApp() {
 
   const clientProjectName = useMemo(() => getProjectName(projects.find((project) => project.id === clientProjectId)), [projects, clientProjectId]);
   const enlargedCandidate = candidates.find((candidate) => candidate.id === enlargedCandidateId);
+  const remindersDueCount = useMemo(() => {
+    const today = getLocalDateKey();
+    return candidates.filter((candidate) => candidate.reminder_date && candidate.reminder_date <= today).length;
+  }, [candidates]);
 
   const getClientName = (clientId) => clients.find((client) => client.id === clientId)?.name || "Bez klienta";
   const getProjectClientName = (project) => getClientName(project?.client_id);
@@ -556,6 +566,50 @@ export default function MiniATSApp() {
       return;
     }
     await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? `${field}_added` : `${field}_removed`, actionLabel: next ? `Sourced by ${label}` : `Sourcing ${label} removed`, oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name, source_owner: label } });
+  };
+
+  const getReminderDraft = (candidate) => {
+    const draft = reminderDrafts[candidate.id] || {};
+    return {
+      reminder_date: draft.reminder_date ?? candidate.reminder_date ?? "",
+      reminder_note: draft.reminder_note ?? candidate.reminder_note ?? "",
+    };
+  };
+
+  const setReminderDraftField = (candidateId, field, value) => {
+    setReminderDrafts((prev) => ({ ...prev, [candidateId]: { ...(prev[candidateId] || {}), [field]: value } }));
+  };
+
+  const reminderClass = (date) => {
+    if (!date) return "border-slate-200 bg-white";
+    const today = getLocalDateKey();
+    if (date < today) return "border-red-200 bg-red-50";
+    if (date === today) return "border-amber-200 bg-amber-50";
+    return "border-emerald-200 bg-emerald-50";
+  };
+
+  const saveReminder = async (candidate) => {
+    const draft = getReminderDraft(candidate);
+    const payload = {
+      reminder_date: draft.reminder_date || null,
+      reminder_note: draft.reminder_note || "",
+    };
+
+    setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, ...payload } : item)));
+    const { error } = await supabase.from("candidates").update(payload).eq("id", candidate.id);
+
+    if (error) {
+      setMessage("Blad zapisu reminderu: " + error.message + ". Jesli brakuje kolumn, uruchom SQL: ALTER TABLE candidates ADD COLUMN IF NOT EXISTS reminder_date date; ALTER TABLE candidates ADD COLUMN IF NOT EXISTS reminder_note text;");
+      refreshAll();
+      return;
+    }
+
+    setReminderDrafts((prev) => {
+      const next = { ...prev };
+      delete next[candidate.id];
+      return next;
+    });
+    setMessage("Reminder zapisany");
   };
 
   const updateCandidateStatus = async (candidate, status) => {
@@ -801,6 +855,7 @@ export default function MiniATSApp() {
   const CandidateCard = ({ candidate }) => {
     const recommended = isRecommended(candidate);
     const active = activeCandidateId === candidate.id || enlargedCandidateId === candidate.id || openProjectSections[candidate.id];
+    const reminderDraft = getReminderDraft(candidate);
     return (
       <article className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${active ? "border-teal-300 ring-4 ring-teal-100" : "border-slate-200"}`} onDoubleClick={() => openModal(candidate.id)}>
         <div className={`h-2 bg-gradient-to-r ${accentClass(candidate.status || "New")}`} />
@@ -846,6 +901,21 @@ export default function MiniATSApp() {
                       <button type="button" onClick={() => startEditCandidate(candidate)} className="rounded-xl border px-3 py-2 text-sm font-bold hover:bg-slate-50">Edytuj</button>
                       <button type="button" onClick={() => openModal(candidate.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800">Powiększ</button>
                       <button type="button" onClick={() => deleteCandidate(candidate)} className="rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50">Usuń</button>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-2xl border p-3 ${reminderClass(candidate.reminder_date || reminderDraft.reminder_date)}`}>
+                    <div className="mb-2 text-sm font-black text-slate-800">🔔 Przypomnienie kontaktu</div>
+                    {(candidate.reminder_date || candidate.reminder_note) && (
+                      <div className="mb-3 rounded-xl bg-white/75 p-2 text-xs text-slate-700">
+                        {candidate.reminder_date && <p><b>Data:</b> {candidate.reminder_date}</p>}
+                        {candidate.reminder_note && <p><b>Notatka:</b> {candidate.reminder_note}</p>}
+                      </div>
+                    )}
+                    <div className="grid gap-2 md:grid-cols-[160px_1fr_auto]">
+                      <input type="date" className="rounded-xl border bg-white p-2 text-sm" value={reminderDraft.reminder_date} onChange={(event) => setReminderDraftField(candidate.id, "reminder_date", event.target.value)} />
+                      <input className="rounded-xl border bg-white p-2 text-sm" placeholder="Notatka reminderu" value={reminderDraft.reminder_note} onChange={(event) => setReminderDraftField(candidate.id, "reminder_note", event.target.value)} />
+                      <button type="button" onClick={() => saveReminder(candidate)} className="rounded-xl border bg-white px-3 py-2 text-sm font-bold hover:bg-slate-50">Zapisz reminder</button>
                     </div>
                   </div>
 
@@ -1114,6 +1184,7 @@ export default function MiniATSApp() {
     <>
       <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">Kandydaci</h2><div className="flex gap-2"><button type="button" onClick={() => setAdvancedMode((prev) => !prev)} className={`rounded-xl px-3 py-2 text-sm font-black ${advancedMode ? "bg-slate-950 text-white" : "border bg-white"}`}>Boolean</button><button type="button" onClick={() => setAdvancedOpen((prev) => !prev)} className="rounded-xl border px-3 py-2 text-sm font-black hover:bg-slate-50">{advancedOpen ? "Hide advanced" : "Advanced filters"}</button></div></div>
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">🔔 Dzisiaj do kontaktu: {remindersDueCount}</div>
         <div className="grid gap-3 md:grid-cols-4">
           <input className="rounded-xl border p-3 md:col-span-2" placeholder={advancedMode ? 'Boolean: (java OR kotlin) AND "spring boot" AND NOT frontend' : "Szukaj..."} value={advancedMode ? advancedQuery : query} onChange={(event) => advancedMode ? setAdvancedQuery(event.target.value) : setQuery(event.target.value)} />
           <select className="rounded-xl border p-3" value={globalStatusFilter} onChange={(event) => setGlobalStatusFilter(event.target.value)}><option value="">Status: wszystkie</option>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
