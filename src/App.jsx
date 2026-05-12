@@ -263,6 +263,8 @@ export default function MiniATSApp() {
   const [projectFilter, setProjectFilter] = useState("");
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [onlyRecommended, setOnlyRecommended] = useState(false);
+  const [onlySourcedMateusz, setOnlySourcedMateusz] = useState(false);
+  const [onlySourcedKlaudia, setOnlySourcedKlaudia] = useState(false);
   const [languageFilter, setLanguageFilter] = useState("");
   const [frameworkFilter, setFrameworkFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -544,6 +546,18 @@ export default function MiniATSApp() {
     else await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? "shortlist_added" : "shortlist_removed", actionLabel: next ? "Shortlist added" : "Shortlist removed", oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name } });
   };
 
+  const toggleSourcedBy = async (candidate, field, label) => {
+    const next = !candidate[field];
+    setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, [field]: next } : item)));
+    const { error } = await supabase.from("candidates").update({ [field]: next }).eq("id", candidate.id);
+    if (error) {
+      setMessage(`Blad oznaczenia ${label}: ${error.message}. Sprawdz, czy kolumna ${field} istnieje w tabeli candidates.`);
+      refreshAll();
+      return;
+    }
+    await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? `${field}_added` : `${field}_removed`, actionLabel: next ? `Sourced by ${label}` : `Sourcing ${label} removed`, oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name, source_owner: label } });
+  };
+
   const updateCandidateStatus = async (candidate, status) => {
     const oldStatus = candidate.status || "New";
     setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, status } : item)));
@@ -716,13 +730,15 @@ export default function MiniATSApp() {
       const matchesProject = !activeProject || relations.some((relation) => relation.project_id === activeProject);
       const matchesFavorite = !onlyFavorites || candidate.favorite;
       const matchesRecommended = !onlyRecommended || relations.some((relation) => relation.recommended_to_client && (!activeProject || relation.project_id === activeProject));
+      const matchesSourcedMateusz = !onlySourcedMateusz || candidate.sourced_by_mateusz;
+      const matchesSourcedKlaudia = !onlySourcedKlaudia || candidate.sourced_by_klaudia;
       const matchesLanguage = splitTerms(languageFilter).every((term) => includesText(candidate.jezyk_programowania, term));
       const matchesFramework = splitTerms(frameworkFilter).every((term) => includesText(candidate.framework, term));
       const matchesTags = splitTerms(tagFilter).every((term) => includesText(candidate.tagi, term));
       const years = getExperience(candidate);
       const matchesMin = !minExperience || years >= Number(minExperience);
       const matchesMax = !maxExperience || years <= Number(maxExperience);
-      return matchesQuery && matchesStatus && matchesProject && matchesFavorite && matchesRecommended && matchesLanguage && matchesFramework && matchesTags && matchesMin && matchesMax;
+      return matchesQuery && matchesStatus && matchesProject && matchesFavorite && matchesRecommended && matchesSourcedMateusz && matchesSourcedKlaudia && matchesLanguage && matchesFramework && matchesTags && matchesMin && matchesMax;
     });
 
     return result.sort((a, b) => {
@@ -735,7 +751,7 @@ export default function MiniATSApp() {
       if (sortBy === "projects") return (b.candidate_projects?.length || 0) - (a.candidate_projects?.length || 0);
       return new Date(b.created_at || 0) - new Date(a.created_at || 0);
     });
-  }, [candidates, debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, clientView, onlyFavorites, onlyRecommended, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy]);
+  }, [candidates, debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, clientView, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => includesText(`${getProjectName(project)} ${getProjectClientName(project)} ${project.kategoria || ""}`, projectSearch));
@@ -748,7 +764,7 @@ export default function MiniATSApp() {
   const saveCurrentSearch = async () => {
     const name = prompt("Nazwa zapisanego wyszukiwania:");
     if (!name) return;
-    const payload = { query, advancedMode, advancedQuery, globalStatusFilter, projectFilter, onlyFavorites, onlyRecommended, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy };
+    const payload = { query, advancedMode, advancedQuery, globalStatusFilter, projectFilter, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy };
     const { error } = await supabase.from("saved_searches").insert([{ name, payload }]);
     if (error) setMessage("Nie udało się zapisać wyszukiwania. Uruchom SQL dla tabeli saved_searches: " + error.message);
     else refreshAll();
@@ -763,6 +779,8 @@ export default function MiniATSApp() {
     setProjectFilter(payload.projectFilter || "");
     setOnlyFavorites(Boolean(payload.onlyFavorites));
     setOnlyRecommended(Boolean(payload.onlyRecommended));
+    setOnlySourcedMateusz(Boolean(payload.onlySourcedMateusz));
+    setOnlySourcedKlaudia(Boolean(payload.onlySourcedKlaudia));
     setLanguageFilter(payload.languageFilter || "");
     setFrameworkFilter(payload.frameworkFilter || "");
     setTagFilter(payload.tagFilter || "");
@@ -792,6 +810,8 @@ export default function MiniATSApp() {
               <div className="flex flex-col items-center gap-2">
                 <button type="button" onClick={() => toggleFavorite(candidate)} className={`text-2xl ${candidate.favorite ? "text-yellow-400" : "text-slate-300 hover:text-yellow-400"}`} title="Shortlista">★</button>
                 <button type="button" onClick={() => toggleRecommended(candidate)} className={`text-2xl ${recommended ? "text-teal-500" : "text-slate-300 hover:text-teal-500"}`} title="Rekomendowany do klienta">♦</button>
+                <button type="button" onClick={() => toggleSourcedBy(candidate, "sourced_by_mateusz", "Mateusz")} className={`h-6 w-6 rounded-full border text-xs font-black transition ${candidate.sourced_by_mateusz ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-300 hover:border-blue-300 hover:text-blue-600"}`} title="Pozyskany przez Mateusza">M</button>
+                <button type="button" onClick={() => toggleSourcedBy(candidate, "sourced_by_klaudia", "Klaudia")} className={`h-6 w-6 rounded-full border text-xs font-black transition ${candidate.sourced_by_klaudia ? "border-purple-600 bg-purple-600 text-white" : "border-slate-200 bg-white text-slate-300 hover:border-purple-300 hover:text-purple-600"}`} title="Pozyskany przez Klaudię">K</button>
               </div>
             )}
             <div className="min-w-0 flex-1">
@@ -1102,13 +1122,13 @@ export default function MiniATSApp() {
           <input className="rounded-xl border p-3" placeholder="Frameworki" value={frameworkFilter} onChange={(event) => setFrameworkFilter(event.target.value)} />
           <input className="rounded-xl border p-3" placeholder="Tagi" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} />
           <select className="rounded-xl border p-3" value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="newest">Najnowsi</option><option value="oldest">Najstarsi</option><option value="name">Nazwa A-Z</option><option value="rating">Najwyższa ocena</option><option value="experience">Największe doświadczenie</option><option value="recommended">Rekomendowani pierwsi</option><option value="shortlist">Shortlista pierwsza</option><option value="projects">Najwięcej projektów</option></select>
-          <button type="button" onClick={() => { setQuery(""); setAdvancedQuery(""); setGlobalStatusFilter(""); setProjectFilter(""); setOnlyFavorites(false); setOnlyRecommended(false); setLanguageFilter(""); setFrameworkFilter(""); setTagFilter(""); setMinExperience(""); setMaxExperience(""); }} className="rounded-xl border px-4 py-3 font-bold hover:bg-slate-50">Wyczyść filtry</button>
+          <button type="button" onClick={() => { setQuery(""); setAdvancedQuery(""); setGlobalStatusFilter(""); setProjectFilter(""); setOnlyFavorites(false); setOnlyRecommended(false); setOnlySourcedMateusz(false); setOnlySourcedKlaudia(false); setLanguageFilter(""); setFrameworkFilter(""); setTagFilter(""); setMinExperience(""); setMaxExperience(""); }} className="rounded-xl border px-4 py-3 font-bold hover:bg-slate-50">Wyczyść filtry</button>
         </div>
 
         {advancedOpen && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="grid gap-3 md:grid-cols-4"><input className="rounded-xl border p-3" placeholder="Min years" type="number" value={minExperience} onChange={(event) => setMinExperience(event.target.value)} /><input className="rounded-xl border p-3" placeholder="Max years" type="number" value={maxExperience} onChange={(event) => setMaxExperience(event.target.value)} /><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={compactMode} onChange={(event) => setCompactMode(event.target.checked)} /> Compact sourcing mode</label><button type="button" onClick={saveCurrentSearch} className="rounded-xl bg-slate-950 px-4 py-3 font-bold text-white">Save search</button></div>{savedSearches.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => applySavedSearch(saved)} className="rounded-full border bg-white px-3 py-1 text-sm font-bold hover:bg-slate-50">{saved.name}</button>)}</div>}</div>}
 
         <div className="mt-4 flex flex-wrap gap-2">{QUICK_CHIPS.map((chip) => <button key={chip} type="button" onClick={() => applyChip(chip)} className="rounded-full border bg-white px-3 py-1 text-xs font-black text-slate-600 hover:bg-slate-50">{chip}</button>)}</div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} /> Tylko shortlista ★</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyRecommended} onChange={(event) => setOnlyRecommended(event.target.checked)} /> Tylko rekomendowani ♦</label></div><p className="text-sm text-slate-500">Znaleziono: <b>{filteredCandidates.length}</b></p></div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} /> Tylko shortlista ★</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyRecommended} onChange={(event) => setOnlyRecommended(event.target.checked)} /> Tylko rekomendowani ♦</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedMateusz} onChange={(event) => setOnlySourcedMateusz(event.target.checked)} /> Tylko M</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedKlaudia} onChange={(event) => setOnlySourcedKlaudia(event.target.checked)} /> Tylko K</label></div><p className="text-sm text-slate-500">Znaleziono: <b>{filteredCandidates.length}</b></p></div>
       </section>
       {loading && <div className="rounded-3xl bg-white p-6 text-center shadow-sm">Ładowanie...</div>}
       {!loading && filteredCandidates.length === 0 && <div className="rounded-3xl bg-white p-10 text-center shadow-sm">Brak kandydatów.</div>}
