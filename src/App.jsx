@@ -270,6 +270,7 @@ export default function MiniATSApp() {
   const [onlyRecommended, setOnlyRecommended] = useState(false);
   const [onlySourcedMateusz, setOnlySourcedMateusz] = useState(false);
   const [onlySourcedKlaudia, setOnlySourcedKlaudia] = useState(false);
+  const [onlyDueReminders, setOnlyDueReminders] = useState(false);
   const [languageFilter, setLanguageFilter] = useState("");
   const [frameworkFilter, setFrameworkFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -282,7 +283,6 @@ export default function MiniATSApp() {
   const [editingId, setEditingId] = useState(null);
   const [formProjectIds, setFormProjectIds] = useState([]);
   const [selectedProjects, setSelectedProjects] = useState({});
-  const [reminderDrafts, setReminderDrafts] = useState({});
   const [parsingCv, setParsingCv] = useState(false);
   const [parsingLinkedin, setParsingLinkedin] = useState(false);
 
@@ -550,34 +550,25 @@ export default function MiniATSApp() {
 
   const toggleFavorite = async (candidate) => {
     const next = !candidate.favorite;
-    setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, favorite: next } : item)));
+    preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, favorite: next } : item))));
     const { error } = await supabase.from("candidates").update({ favorite: next }).eq("id", candidate.id);
-    if (error) { setMessage("Blad shortlisty: " + error.message); refreshAll(); }
+    if (error) {
+      setMessage("Blad shortlisty: " + error.message);
+      preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, favorite: !next } : item))));
+    }
     else await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? "shortlist_added" : "shortlist_removed", actionLabel: next ? "Shortlist added" : "Shortlist removed", oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name } });
   };
 
   const toggleSourcedBy = async (candidate, field, label) => {
     const next = !candidate[field];
-    setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, [field]: next } : item)));
+    preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, [field]: next } : item))));
     const { error } = await supabase.from("candidates").update({ [field]: next }).eq("id", candidate.id);
     if (error) {
       setMessage(`Blad oznaczenia ${label}: ${error.message}. Sprawdz, czy kolumna ${field} istnieje w tabeli candidates.`);
-      refreshAll();
+      preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, [field]: !next } : item))));
       return;
     }
     await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? `${field}_added` : `${field}_removed`, actionLabel: next ? `Sourced by ${label}` : `Sourcing ${label} removed`, oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name, source_owner: label } });
-  };
-
-  const getReminderDraft = (candidate) => {
-    const draft = reminderDrafts[candidate.id] || {};
-    return {
-      reminder_date: draft.reminder_date ?? candidate.reminder_date ?? "",
-      reminder_note: draft.reminder_note ?? candidate.reminder_note ?? "",
-    };
-  };
-
-  const setReminderDraftField = (candidateId, field, value) => {
-    setReminderDrafts((prev) => ({ ...prev, [candidateId]: { ...(prev[candidateId] || {}), [field]: value } }));
   };
 
   const reminderClass = (date) => {
@@ -588,36 +579,42 @@ export default function MiniATSApp() {
     return "border-emerald-200 bg-emerald-50";
   };
 
-  const saveReminder = async (candidate) => {
-    const draft = getReminderDraft(candidate);
-    const payload = {
-      reminder_date: draft.reminder_date || null,
-      reminder_note: draft.reminder_note || "",
-    };
+  const reminderBadge = (date) => {
+    if (!date) return null;
+    const today = getLocalDateKey();
+    if (date < today) return { label: "Reminder zaległy", className: "border-red-200 bg-red-50 text-red-700" };
+    if (date === today) return { label: "Reminder dzisiaj", className: "border-amber-200 bg-amber-50 text-amber-800" };
+    return { label: "Reminder przyszły", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+  };
 
-    setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, ...payload } : item)));
+  const saveReminder = async (candidate, formElement = null) => {
+    const formData = formElement ? new FormData(formElement) : null;
+    const payload = {
+      reminder_date: formData ? formData.get("reminder_date") || null : candidate.reminder_date || null,
+      reminder_note: String(formData?.get("reminder_note") ?? candidate.reminder_note ?? ""),
+    };
+    const previous = { reminder_date: candidate.reminder_date || null, reminder_note: candidate.reminder_note || "" };
+
+    preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, ...payload } : item))));
     const { error } = await supabase.from("candidates").update(payload).eq("id", candidate.id);
 
     if (error) {
       setMessage("Blad zapisu reminderu: " + error.message + ". Jesli brakuje kolumn, uruchom SQL: ALTER TABLE candidates ADD COLUMN IF NOT EXISTS reminder_date date; ALTER TABLE candidates ADD COLUMN IF NOT EXISTS reminder_note text;");
-      refreshAll();
+      preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, ...previous } : item))));
       return;
     }
 
-    setReminderDrafts((prev) => {
-      const next = { ...prev };
-      delete next[candidate.id];
-      return next;
-    });
     setMessage("Reminder zapisany");
   };
 
   const updateCandidateStatus = async (candidate, status) => {
     const oldStatus = candidate.status || "New";
-    setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, status } : item)));
+    preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, status } : item))));
     const { error } = await supabase.from("candidates").update({ status }).eq("id", candidate.id);
-    if (error) setMessage("Nie udalo sie zmienic statusu: " + error.message);
-    else { if (oldStatus !== status) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Status changed", oldValue: oldStatus, newValue: status, metadata: { candidate_name: candidate.name } }); refreshAll(); }
+    if (error) {
+      setMessage("Nie udalo sie zmienic statusu: " + error.message);
+      preserveScroll(() => setCandidates((prev) => prev.map((item) => (item.id === candidate.id ? { ...item, status: oldStatus } : item))));
+    } else if (oldStatus !== status) await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: "status_changed", actionLabel: "Status changed", oldValue: oldStatus, newValue: status, metadata: { candidate_name: candidate.name } });
   };
 
   const recommendationRelation = (candidate, relation = null) => {
@@ -638,9 +635,12 @@ export default function MiniATSApp() {
     if (!target?.id) return setMessage("Wybierz projekt albo kliknij diament przy konkretnym projekcie kandydata.");
     const next = !target.recommended_to_client;
     const projectName = getProjectName(target.Projekty || projects.find((project) => project.id === target.project_id));
-    setCandidates((prev) => prev.map((item) => item.id === candidate.id ? { ...item, candidate_projects: item.candidate_projects?.map((cp) => (cp.id === target.id ? { ...cp, recommended_to_client: next } : cp)) } : item));
+    preserveScroll(() => setCandidates((prev) => prev.map((item) => item.id === candidate.id ? { ...item, candidate_projects: item.candidate_projects?.map((cp) => (cp.id === target.id ? { ...cp, recommended_to_client: next } : cp)) } : item)));
     const { error } = await supabase.from("candidate_projects").update({ recommended_to_client: next }).eq("id", target.id);
-    if (error) { setMessage("Blad rekomendacji: " + error.message); refreshAll(); }
+    if (error) {
+      setMessage("Blad rekomendacji: " + error.message);
+      preserveScroll(() => setCandidates((prev) => prev.map((item) => item.id === candidate.id ? { ...item, candidate_projects: item.candidate_projects?.map((cp) => (cp.id === target.id ? { ...cp, recommended_to_client: !next } : cp)) } : item)));
+    }
     else await logActivity({ entityType: "candidate", entityId: candidate.id, actionType: next ? "recommended_added" : "recommended_removed", actionLabel: next ? "Candidate marked as recommended" : "Candidate recommendation removed", oldValue: !next, newValue: next, metadata: { candidate_name: candidate.name, project_id: target.project_id, project_name: projectName, relation_id: target.id } });
   };
 
@@ -776,6 +776,7 @@ export default function MiniATSApp() {
 
   const filteredCandidates = useMemo(() => {
     const activeProject = clientView ? clientProjectId : projectFilter;
+    const today = getLocalDateKey();
     const result = candidates.filter((candidate) => {
       const text = getCandidateText(candidate);
       const relations = candidate.candidate_projects || [];
@@ -786,13 +787,14 @@ export default function MiniATSApp() {
       const matchesRecommended = !onlyRecommended || relations.some((relation) => relation.recommended_to_client && (!activeProject || relation.project_id === activeProject));
       const matchesSourcedMateusz = !onlySourcedMateusz || candidate.sourced_by_mateusz;
       const matchesSourcedKlaudia = !onlySourcedKlaudia || candidate.sourced_by_klaudia;
+      const matchesDueReminder = !onlyDueReminders || (candidate.reminder_date && candidate.reminder_date <= today);
       const matchesLanguage = splitTerms(languageFilter).every((term) => includesText(candidate.jezyk_programowania, term));
       const matchesFramework = splitTerms(frameworkFilter).every((term) => includesText(candidate.framework, term));
       const matchesTags = splitTerms(tagFilter).every((term) => includesText(candidate.tagi, term));
       const years = getExperience(candidate);
       const matchesMin = !minExperience || years >= Number(minExperience);
       const matchesMax = !maxExperience || years <= Number(maxExperience);
-      return matchesQuery && matchesStatus && matchesProject && matchesFavorite && matchesRecommended && matchesSourcedMateusz && matchesSourcedKlaudia && matchesLanguage && matchesFramework && matchesTags && matchesMin && matchesMax;
+      return matchesQuery && matchesStatus && matchesProject && matchesFavorite && matchesRecommended && matchesSourcedMateusz && matchesSourcedKlaudia && matchesDueReminder && matchesLanguage && matchesFramework && matchesTags && matchesMin && matchesMax;
     });
 
     return result.sort((a, b) => {
@@ -805,7 +807,7 @@ export default function MiniATSApp() {
       if (sortBy === "projects") return (b.candidate_projects?.length || 0) - (a.candidate_projects?.length || 0);
       return new Date(b.created_at || 0) - new Date(a.created_at || 0);
     });
-  }, [candidates, debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, clientView, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy]);
+  }, [candidates, debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, clientView, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, onlyDueReminders, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => includesText(`${getProjectName(project)} ${getProjectClientName(project)} ${project.kategoria || ""}`, projectSearch));
@@ -818,7 +820,7 @@ export default function MiniATSApp() {
   const saveCurrentSearch = async () => {
     const name = prompt("Nazwa zapisanego wyszukiwania:");
     if (!name) return;
-    const payload = { query, advancedMode, advancedQuery, globalStatusFilter, projectFilter, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy };
+    const payload = { query, advancedMode, advancedQuery, globalStatusFilter, projectFilter, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, onlyDueReminders, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy };
     const { error } = await supabase.from("saved_searches").insert([{ name, payload }]);
     if (error) setMessage("Nie udało się zapisać wyszukiwania. Uruchom SQL dla tabeli saved_searches: " + error.message);
     else refreshAll();
@@ -835,6 +837,7 @@ export default function MiniATSApp() {
     setOnlyRecommended(Boolean(payload.onlyRecommended));
     setOnlySourcedMateusz(Boolean(payload.onlySourcedMateusz));
     setOnlySourcedKlaudia(Boolean(payload.onlySourcedKlaudia));
+    setOnlyDueReminders(Boolean(payload.onlyDueReminders));
     setLanguageFilter(payload.languageFilter || "");
     setFrameworkFilter(payload.frameworkFilter || "");
     setTagFilter(payload.tagFilter || "");
@@ -855,7 +858,7 @@ export default function MiniATSApp() {
   const CandidateCard = ({ candidate }) => {
     const recommended = isRecommended(candidate);
     const active = activeCandidateId === candidate.id || enlargedCandidateId === candidate.id || openProjectSections[candidate.id];
-    const reminderDraft = getReminderDraft(candidate);
+    const candidateReminderBadge = reminderBadge(candidate.reminder_date);
     return (
       <article className={`overflow-hidden rounded-3xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${active ? "border-teal-300 ring-4 ring-teal-100" : "border-slate-200"}`} onDoubleClick={() => openModal(candidate.id)}>
         <div className={`h-2 bg-gradient-to-r ${accentClass(candidate.status || "New")}`} />
@@ -878,6 +881,7 @@ export default function MiniATSApp() {
                 <div className="flex flex-col items-end gap-2">
                   <StatusBadge status={candidate.status || "New"} compact />
                   <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">{candidateMatch(candidate)}% Match</span>
+                  {candidateReminderBadge && <span className={`rounded-full border px-3 py-1 text-xs font-black ${candidateReminderBadge.className}`}>{candidateReminderBadge.label}</span>}
                 </div>
               </div>
 
@@ -904,7 +908,7 @@ export default function MiniATSApp() {
                     </div>
                   </div>
 
-                  <div className={`rounded-2xl border p-3 ${reminderClass(candidate.reminder_date || reminderDraft.reminder_date)}`}>
+                  <form className={`rounded-2xl border p-3 ${reminderClass(candidate.reminder_date)}`} onSubmit={(event) => { event.preventDefault(); saveReminder(candidate, event.currentTarget); }}>
                     <div className="mb-2 text-sm font-black text-slate-800">🔔 Przypomnienie kontaktu</div>
                     {(candidate.reminder_date || candidate.reminder_note) && (
                       <div className="mb-3 rounded-xl bg-white/75 p-2 text-xs text-slate-700">
@@ -913,11 +917,11 @@ export default function MiniATSApp() {
                       </div>
                     )}
                     <div className="grid gap-2 md:grid-cols-[160px_1fr_auto]">
-                      <input type="date" className="rounded-xl border bg-white p-2 text-sm" value={reminderDraft.reminder_date} onChange={(event) => setReminderDraftField(candidate.id, "reminder_date", event.target.value)} />
-                      <input className="rounded-xl border bg-white p-2 text-sm" placeholder="Notatka reminderu" value={reminderDraft.reminder_note} onChange={(event) => setReminderDraftField(candidate.id, "reminder_note", event.target.value)} />
-                      <button type="button" onClick={() => saveReminder(candidate)} className="rounded-xl border bg-white px-3 py-2 text-sm font-bold hover:bg-slate-50">Zapisz reminder</button>
+                      <input name="reminder_date" type="date" className="rounded-xl border bg-white p-2 text-sm" defaultValue={candidate.reminder_date || ""} />
+                      <input name="reminder_note" className="rounded-xl border bg-white p-2 text-sm" placeholder="Notatka reminderu" defaultValue={candidate.reminder_note || ""} />
+                      <button type="submit" className="rounded-xl border bg-white px-3 py-2 text-sm font-bold hover:bg-slate-50">Zapisz reminder</button>
                     </div>
-                  </div>
+                  </form>
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-3">
                     <button type="button" onClick={() => toggleProjectSection(candidate.id)} className="flex w-full items-center justify-between text-left text-sm font-black text-slate-800">
@@ -1184,7 +1188,10 @@ export default function MiniATSApp() {
     <>
       <section className="mb-6 rounded-3xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black">Kandydaci</h2><div className="flex gap-2"><button type="button" onClick={() => setAdvancedMode((prev) => !prev)} className={`rounded-xl px-3 py-2 text-sm font-black ${advancedMode ? "bg-slate-950 text-white" : "border bg-white"}`}>Boolean</button><button type="button" onClick={() => setAdvancedOpen((prev) => !prev)} className="rounded-xl border px-3 py-2 text-sm font-black hover:bg-slate-50">{advancedOpen ? "Hide advanced" : "Advanced filters"}</button></div></div>
-        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">🔔 Dzisiaj do kontaktu: {remindersDueCount}</div>
+        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-black ${onlyDueReminders ? "border-amber-300 bg-amber-100 text-amber-950" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+          <button type="button" onClick={() => preserveScroll(() => setOnlyDueReminders(true))} className="text-left hover:underline">🔔 Dzisiaj do kontaktu: {remindersDueCount}</button>
+          {onlyDueReminders && <button type="button" onClick={() => preserveScroll(() => setOnlyDueReminders(false))} className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-black text-amber-900 hover:bg-amber-50">Pokaż wszystkie</button>}
+        </div>
         <div className="grid gap-3 md:grid-cols-4">
           <input className="rounded-xl border p-3 md:col-span-2" placeholder={advancedMode ? 'Boolean: (java OR kotlin) AND "spring boot" AND NOT frontend' : "Szukaj..."} value={advancedMode ? advancedQuery : query} onChange={(event) => advancedMode ? setAdvancedQuery(event.target.value) : setQuery(event.target.value)} />
           <select className="rounded-xl border p-3" value={globalStatusFilter} onChange={(event) => setGlobalStatusFilter(event.target.value)}><option value="">Status: wszystkie</option>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select>
@@ -1193,13 +1200,13 @@ export default function MiniATSApp() {
           <input className="rounded-xl border p-3" placeholder="Frameworki" value={frameworkFilter} onChange={(event) => setFrameworkFilter(event.target.value)} />
           <input className="rounded-xl border p-3" placeholder="Tagi" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} />
           <select className="rounded-xl border p-3" value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="newest">Najnowsi</option><option value="oldest">Najstarsi</option><option value="name">Nazwa A-Z</option><option value="rating">Najwyższa ocena</option><option value="experience">Największe doświadczenie</option><option value="recommended">Rekomendowani pierwsi</option><option value="shortlist">Shortlista pierwsza</option><option value="projects">Najwięcej projektów</option></select>
-          <button type="button" onClick={() => { setQuery(""); setAdvancedQuery(""); setGlobalStatusFilter(""); setProjectFilter(""); setOnlyFavorites(false); setOnlyRecommended(false); setOnlySourcedMateusz(false); setOnlySourcedKlaudia(false); setLanguageFilter(""); setFrameworkFilter(""); setTagFilter(""); setMinExperience(""); setMaxExperience(""); }} className="rounded-xl border px-4 py-3 font-bold hover:bg-slate-50">Wyczyść filtry</button>
+          <button type="button" onClick={() => { setQuery(""); setAdvancedQuery(""); setGlobalStatusFilter(""); setProjectFilter(""); setOnlyFavorites(false); setOnlyRecommended(false); setOnlySourcedMateusz(false); setOnlySourcedKlaudia(false); setOnlyDueReminders(false); setLanguageFilter(""); setFrameworkFilter(""); setTagFilter(""); setMinExperience(""); setMaxExperience(""); }} className="rounded-xl border px-4 py-3 font-bold hover:bg-slate-50">Wyczyść filtry</button>
         </div>
 
         {advancedOpen && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="grid gap-3 md:grid-cols-4"><input className="rounded-xl border p-3" placeholder="Min years" type="number" value={minExperience} onChange={(event) => setMinExperience(event.target.value)} /><input className="rounded-xl border p-3" placeholder="Max years" type="number" value={maxExperience} onChange={(event) => setMaxExperience(event.target.value)} /><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={compactMode} onChange={(event) => setCompactMode(event.target.checked)} /> Compact sourcing mode</label><button type="button" onClick={saveCurrentSearch} className="rounded-xl bg-slate-950 px-4 py-3 font-bold text-white">Save search</button></div>{savedSearches.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => applySavedSearch(saved)} className="rounded-full border bg-white px-3 py-1 text-sm font-bold hover:bg-slate-50">{saved.name}</button>)}</div>}</div>}
 
         <div className="mt-4 flex flex-wrap gap-2">{QUICK_CHIPS.map((chip) => <button key={chip} type="button" onClick={() => applyChip(chip)} className="rounded-full border bg-white px-3 py-1 text-xs font-black text-slate-600 hover:bg-slate-50">{chip}</button>)}</div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} /> Tylko shortlista ★</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyRecommended} onChange={(event) => setOnlyRecommended(event.target.checked)} /> Tylko rekomendowani ♦</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedMateusz} onChange={(event) => setOnlySourcedMateusz(event.target.checked)} /> Tylko M</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedKlaudia} onChange={(event) => setOnlySourcedKlaudia(event.target.checked)} /> Tylko K</label></div><p className="text-sm text-slate-500">Znaleziono: <b>{filteredCandidates.length}</b></p></div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} /> Tylko shortlista ★</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyRecommended} onChange={(event) => setOnlyRecommended(event.target.checked)} /> Tylko rekomendowani ♦</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedMateusz} onChange={(event) => setOnlySourcedMateusz(event.target.checked)} /> Tylko M</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedKlaudia} onChange={(event) => setOnlySourcedKlaudia(event.target.checked)} /> Tylko K</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyDueReminders} onChange={(event) => preserveScroll(() => setOnlyDueReminders(event.target.checked))} /> Tylko do kontaktu dziś / overdue</label></div><p className="text-sm text-slate-500">Znaleziono: <b>{filteredCandidates.length}</b></p></div>
       </section>
       {loading && <div className="rounded-3xl bg-white p-6 text-center shadow-sm">Ładowanie...</div>}
       {!loading && filteredCandidates.length === 0 && <div className="rounded-3xl bg-white p-10 text-center shadow-sm">Brak kandydatów.</div>}
