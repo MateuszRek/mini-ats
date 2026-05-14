@@ -321,9 +321,11 @@ export default function MiniATSApp() {
   const restoreScrollYRef = useRef(null);
   const cvInputRef = useRef(null);
 
-  const preserveScroll = (action) => {
-    restoreScrollYRef.current = window.scrollY;
-    action();
+  const preserveScroll = async (action) => {
+    const scrollY = window.scrollY;
+    restoreScrollYRef.current = scrollY;
+    await action();
+    requestAnimationFrame(() => window.scrollTo({ top: scrollY, left: 0, behavior: "auto" }));
   };
 
   useLayoutEffect(() => {
@@ -684,13 +686,22 @@ export default function MiniATSApp() {
 
   const updateProjectRelation = async (relationId, payload) => {
     const context = getRelationContext(relationId); const oldRelation = context.relation || {};
+    preserveScroll(() => setCandidates((prev) => prev.map((candidate) => ({
+      ...candidate,
+      candidate_projects: candidate.candidate_projects?.map((relation) => (relation.id === relationId ? { ...relation, ...payload } : relation)),
+    }))));
     const { error } = await supabase.from("candidate_projects").update(payload).eq("id", relationId);
-    if (error) setMessage("Blad zapisu projektu kandydata: " + error.message);
+    if (error) {
+      setMessage("Blad zapisu projektu kandydata: " + error.message);
+      preserveScroll(() => setCandidates((prev) => prev.map((candidate) => ({
+        ...candidate,
+        candidate_projects: candidate.candidate_projects?.map((relation) => (relation.id === relationId ? { ...relation, ...oldRelation } : relation)),
+      }))));
+    }
     else {
       const meta = { candidate_name: context.candidate?.name || "", project_id: oldRelation.project_id, project_name: getProjectName(context.project), relation_id: relationId };
       if (Object.prototype.hasOwnProperty.call(payload, "status") && oldRelation.status !== payload.status) await logActivity({ entityType: "candidate", entityId: context.candidate?.id || relationId, actionType: "status_changed", actionLabel: "Project status changed", oldValue: oldRelation.status || "New", newValue: payload.status, metadata: meta });
       for (const field of ["notes", "interview_summary", "recruiter_notes"]) if (Object.prototype.hasOwnProperty.call(payload, field) && (oldRelation[field] || "") !== (payload[field] || "")) await logActivity({ entityType: "candidate", entityId: context.candidate?.id || relationId, actionType: "notes_changed", actionLabel: field.replace(/_/g, " ") + " changed", oldValue: oldRelation[field] || "", newValue: payload[field] || "", metadata: { ...meta, field } });
-      refreshAll();
     }
   };
 
