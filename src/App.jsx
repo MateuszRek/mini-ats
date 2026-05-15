@@ -45,6 +45,7 @@ const STATUS_ACCENTS = {
 const DEFAULT_LANGUAGES = ["Java", "JavaScript", "TypeScript", "Python", "Go", "C#", "C++", "PHP", "Kotlin", "SQL"];
 const DEFAULT_FRAMEWORKS = ["React", "Angular", "Vue", "Next.js", "Node.js", "Spring", "Django", "Flask", ".NET", "Laravel", "NestJS"];
 const QUICK_CHIPS = ["Java", "React", "AI", "Remote", "Senior", "AWS", "Kubernetes", "Recommended", "Shortlist"];
+const CANDIDATE_PAGE_SIZE = 50;
 
 const emptyCandidate = {
   favorite: false,
@@ -258,6 +259,8 @@ export default function MiniATSApp() {
   const [clientProjectId, setClientProjectId] = useState("");
   const [activeTab, setActiveTab] = useState("candidates");
   const [candidates, setCandidates] = useState([]);
+  const [candidatePage, setCandidatePage] = useState(1);
+  const [candidateTotal, setCandidateTotal] = useState(0);
   const [projects, setProjects] = useState([]);
   const [clients, setClients] = useState([]);
   const [savedSearches, setSavedSearches] = useState([]);
@@ -340,17 +343,47 @@ export default function MiniATSApp() {
     return () => clearTimeout(timer);
   }, [query, advancedQuery, advancedMode]);
 
-  const refreshAll = async () => {
+  const cleanSearchTerm = (value) => String(value || "").trim().replace(/[%,]/g, " ");
+
+  const refreshAll = async (pageToLoad = candidatePage) => {
     setLoading(true);
+    const activeProject = clientView ? clientProjectId : projectFilter;
+    const from = (pageToLoad - 1) * CANDIDATE_PAGE_SIZE;
+    const to = from + CANDIDATE_PAGE_SIZE - 1;
+    const candidateSelect = activeProject || onlyRecommended
+      ? "*, candidate_projects(*, Projekty(*)), filter_links:candidate_projects!inner(id, project_id, recommended_to_client)"
+      : "*, candidate_projects(*, Projekty(*))";
+
+    let candidateQuery = supabase.from("candidates").select(candidateSelect, { count: "exact" });
+    if (activeProject) candidateQuery = candidateQuery.eq("filter_links.project_id", activeProject);
+    if (onlyRecommended) candidateQuery = candidateQuery.eq("filter_links.recommended_to_client", true);
+    if (globalStatusFilter) candidateQuery = candidateQuery.eq("status", globalStatusFilter);
+    if (onlyFavorites) candidateQuery = candidateQuery.eq("favorite", true);
+    if (onlySourcedMateusz) candidateQuery = candidateQuery.eq("sourced_by_mateusz", true);
+    if (onlySourcedKlaudia) candidateQuery = candidateQuery.eq("sourced_by_klaudia", true);
+    if (onlyPrefersRemote) candidateQuery = candidateQuery.eq("prefers_remote", true);
+    if (onlyPrefersUop) candidateQuery = candidateQuery.eq("prefers_uop", true);
+    if (onlyPrefersB2b) candidateQuery = candidateQuery.eq("prefers_b2b", true);
+    if (!advancedMode && cleanSearchTerm(debouncedQuery)) {
+      const term = cleanSearchTerm(debouncedQuery);
+      candidateQuery = candidateQuery?.or(`name.ilike.%${term}%,email.ilike.%${term}%,telefon.ilike.%${term}%,lokalizacja.ilike.%${term}%,tagi.ilike.%${term}%,jezyk_programowania.ilike.%${term}%,framework.ilike.%${term}%`);
+    }
+    if (sortBy === "oldest") candidateQuery = candidateQuery?.order("created_at", { ascending: true });
+    else if (sortBy === "rating") candidateQuery = candidateQuery?.order("rating", { ascending: false, nullsFirst: false });
+    else if (sortBy === "name") candidateQuery = candidateQuery?.order("name", { ascending: true });
+    else candidateQuery = candidateQuery?.order("created_at", { ascending: false });
+    candidateQuery = candidateQuery?.range(from, to);
+
     const [candidateResult, projectResult, clientResult, savedResult] = await Promise.all([
-      supabase.from("candidates").select("*, candidate_projects(*, Projekty(*))").order("created_at", { ascending: false }),
+      candidateQuery || Promise.resolve({ data: [], error: null, count: 0 }),
       supabase.from("Projekty").select("*").order("created_at", { ascending: false }),
       supabase.from("clients").select("*").order("created_at", { ascending: false }),
       supabase.from("saved_searches").select("*").order("created_at", { ascending: false }),
     ]);
 
-    if (candidateResult.error) setMessage("Błąd pobierania kandydatów: " + candidateResult.error.message);
+    if (candidateResult.error) setMessage("Blad pobierania kandydatow: " + candidateResult.error.message);
     setCandidates(candidateResult.data || []);
+    setCandidateTotal(candidateResult.count || 0);
     setProjects(projectResult.data || []);
     setClients(clientResult.data || []);
     if (!savedResult.error) setSavedSearches(savedResult.data || []);
@@ -376,8 +409,12 @@ export default function MiniATSApp() {
   }, []);
 
   useEffect(() => {
-    if (session || clientView) refreshAll();
-  }, [session, clientView]);
+    setCandidatePage(1);
+  }, [debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, onlyPrefersRemote, onlyPrefersUop, onlyPrefersB2b, onlyDueReminders, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy]);
+
+  useEffect(() => {
+    if (session || clientView) refreshAll(candidatePage);
+  }, [session, clientView, candidatePage, debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, onlyPrefersRemote, onlyPrefersUop, onlyPrefersB2b, sortBy]);
 
   const suggestions = useMemo(() => {
     const languages = new Set(DEFAULT_LANGUAGES);
@@ -1253,11 +1290,16 @@ export default function MiniATSApp() {
         {advancedOpen && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="grid gap-3 md:grid-cols-4"><input className="rounded-xl border p-3" placeholder="Min years" type="number" value={minExperience} onChange={(event) => setMinExperience(event.target.value)} /><input className="rounded-xl border p-3" placeholder="Max years" type="number" value={maxExperience} onChange={(event) => setMaxExperience(event.target.value)} /><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={compactMode} onChange={(event) => setCompactMode(event.target.checked)} /> Compact sourcing mode</label><button type="button" onClick={saveCurrentSearch} className="rounded-xl bg-slate-950 px-4 py-3 font-bold text-white">Save search</button></div>{savedSearches.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => applySavedSearch(saved)} className="rounded-full border bg-white px-3 py-1 text-sm font-bold hover:bg-slate-50">{saved.name}</button>)}</div>}</div>}
 
         <div className="mt-4 flex flex-wrap gap-2">{QUICK_CHIPS.map((chip) => <button key={chip} type="button" onClick={() => applyChip(chip)} className="rounded-full border bg-white px-3 py-1 text-xs font-black text-slate-600 hover:bg-slate-50">{chip}</button>)}</div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} /> Tylko shortlista ★</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyRecommended} onChange={(event) => setOnlyRecommended(event.target.checked)} /> Tylko rekomendowani ♦</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedMateusz} onChange={(event) => setOnlySourcedMateusz(event.target.checked)} /> Tylko M</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedKlaudia} onChange={(event) => setOnlySourcedKlaudia(event.target.checked)} /> Tylko K</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersRemote} onChange={(event) => setOnlyPrefersRemote(event.target.checked)} /> Tylko R</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersUop} onChange={(event) => setOnlyPrefersUop(event.target.checked)} /> Tylko U</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersB2b} onChange={(event) => setOnlyPrefersB2b(event.target.checked)} /> Tylko B</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyDueReminders} onChange={(event) => preserveScroll(() => setOnlyDueReminders(event.target.checked))} /> Tylko do kontaktu dziś / overdue</label></div><p className="text-sm text-slate-500">Znaleziono: <b>{filteredCandidates.length}</b></p></div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} /> Tylko shortlista ★</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyRecommended} onChange={(event) => setOnlyRecommended(event.target.checked)} /> Tylko rekomendowani ♦</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedMateusz} onChange={(event) => setOnlySourcedMateusz(event.target.checked)} /> Tylko M</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedKlaudia} onChange={(event) => setOnlySourcedKlaudia(event.target.checked)} /> Tylko K</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersRemote} onChange={(event) => setOnlyPrefersRemote(event.target.checked)} /> Tylko R</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersUop} onChange={(event) => setOnlyPrefersUop(event.target.checked)} /> Tylko U</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersB2b} onChange={(event) => setOnlyPrefersB2b(event.target.checked)} /> Tylko B</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyDueReminders} onChange={(event) => preserveScroll(() => setOnlyDueReminders(event.target.checked))} /> Tylko do kontaktu dziś / overdue</label></div><p className="text-sm text-slate-500">Znaleziono: <b>{candidateTotal}</b> <span className="text-slate-400">(na stronie: {filteredCandidates.length})</span></p></div>
       </section>
       {loading && <div className="rounded-3xl bg-white p-6 text-center shadow-sm">Ładowanie...</div>}
       {!loading && filteredCandidates.length === 0 && <div className="rounded-3xl bg-white p-10 text-center shadow-sm">Brak kandydatów.</div>}
       <main className={`grid gap-4 ${compactMode ? "xl:grid-cols-3" : "lg:grid-cols-2"}`}>{filteredCandidates.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} />)}</main>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3 rounded-3xl bg-white p-4 text-sm font-black shadow-sm">
+        <button type="button" disabled={candidatePage <= 1} onClick={() => preserveScroll(() => setCandidatePage((page) => Math.max(1, page - 1)))} className="rounded-xl border px-4 py-2 disabled:cursor-not-allowed disabled:opacity-40">Poprzednia</button>
+        <span className="text-slate-600">Strona {candidatePage}</span>
+        <button type="button" disabled={candidatePage * CANDIDATE_PAGE_SIZE >= candidateTotal} onClick={() => preserveScroll(() => setCandidatePage((page) => page + 1))} className="rounded-xl border px-4 py-2 disabled:cursor-not-allowed disabled:opacity-40">Nastepna</button>
+      </div>
     </>
   );
 
