@@ -46,6 +46,9 @@ const DEFAULT_LANGUAGES = ["Java", "JavaScript", "TypeScript", "Python", "Go", "
 const DEFAULT_FRAMEWORKS = ["React", "Angular", "Vue", "Next.js", "Node.js", "Spring", "Django", "Flask", ".NET", "Laravel", "NestJS"];
 const QUICK_CHIPS = ["Java", "React", "AI", "Remote", "Senior", "AWS", "Kubernetes", "Recommended", "Shortlist"];
 const CANDIDATE_PAGE_SIZE = 50;
+const FILTER_NEUTRAL = "neutral";
+const FILTER_ONLY = "only";
+const FILTER_EXCLUDE = "exclude";
 
 const emptyCandidate = {
   favorite: false,
@@ -97,6 +100,26 @@ function splitTerms(value) {
     .split(/[,;/|]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeFlagFilterState(value) {
+  if (value === true || value === FILTER_ONLY) return FILTER_ONLY;
+  if (value === FILTER_EXCLUDE) return FILTER_EXCLUDE;
+  return FILTER_NEUTRAL;
+}
+
+function nextFlagFilterState(value) {
+  const state = normalizeFlagFilterState(value);
+  if (state === FILTER_NEUTRAL) return FILTER_ONLY;
+  if (state === FILTER_ONLY) return FILTER_EXCLUDE;
+  return FILTER_NEUTRAL;
+}
+
+function matchesFlagFilter(value, state) {
+  const normalizedState = normalizeFlagFilterState(state);
+  if (normalizedState === FILTER_ONLY) return Boolean(value);
+  if (normalizedState === FILTER_EXCLUDE) return !Boolean(value);
+  return true;
 }
 
 function getProjectName(project) {
@@ -274,13 +297,13 @@ export default function MiniATSApp() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [globalStatusFilter, setGlobalStatusFilter] = useState("");
   const [projectFilter, setProjectFilter] = useState("");
-  const [onlyFavorites, setOnlyFavorites] = useState(false);
-  const [onlyRecommended, setOnlyRecommended] = useState(false);
-  const [onlySourcedMateusz, setOnlySourcedMateusz] = useState(false);
-  const [onlySourcedKlaudia, setOnlySourcedKlaudia] = useState(false);
-  const [onlyPrefersRemote, setOnlyPrefersRemote] = useState(false);
-  const [onlyPrefersUop, setOnlyPrefersUop] = useState(false);
-  const [onlyPrefersB2b, setOnlyPrefersB2b] = useState(false);
+  const [onlyFavorites, setOnlyFavorites] = useState(FILTER_NEUTRAL);
+  const [onlyRecommended, setOnlyRecommended] = useState(FILTER_NEUTRAL);
+  const [onlySourcedMateusz, setOnlySourcedMateusz] = useState(FILTER_NEUTRAL);
+  const [onlySourcedKlaudia, setOnlySourcedKlaudia] = useState(FILTER_NEUTRAL);
+  const [onlyPrefersRemote, setOnlyPrefersRemote] = useState(FILTER_NEUTRAL);
+  const [onlyPrefersUop, setOnlyPrefersUop] = useState(FILTER_NEUTRAL);
+  const [onlyPrefersB2b, setOnlyPrefersB2b] = useState(FILTER_NEUTRAL);
   const [onlyDueReminders, setOnlyDueReminders] = useState(false);
   const [languageFilter, setLanguageFilter] = useState("");
   const [frameworkFilter, setFrameworkFilter] = useState("");
@@ -345,25 +368,44 @@ export default function MiniATSApp() {
 
   const cleanSearchTerm = (value) => String(value || "").trim().replace(/[%,]/g, " ");
 
+  const applySupabaseFlagFilter = (query, field, state) => {
+    const normalizedState = normalizeFlagFilterState(state);
+    if (normalizedState === FILTER_ONLY) return query.eq(field, true);
+    if (normalizedState === FILTER_EXCLUDE) return query.or(`${field}.is.null,${field}.eq.false`);
+    return query;
+  };
+
   const refreshAll = async (pageToLoad = candidatePage) => {
     setLoading(true);
     const activeProject = clientView ? clientProjectId : projectFilter;
     const from = (pageToLoad - 1) * CANDIDATE_PAGE_SIZE;
     const to = from + CANDIDATE_PAGE_SIZE - 1;
-    const candidateSelect = activeProject || onlyRecommended
+    const recommendedState = normalizeFlagFilterState(onlyRecommended);
+    let excludedRecommendedCandidateIds = [];
+
+    if (recommendedState === FILTER_EXCLUDE) {
+      let recommendedQuery = supabase.from("candidate_projects").select("candidate_id").eq("recommended_to_client", true);
+      if (activeProject) recommendedQuery = recommendedQuery.eq("project_id", activeProject);
+      const recommendedResult = await recommendedQuery;
+      if (recommendedResult.error) setMessage("Blad filtrowania rekomendacji: " + recommendedResult.error.message);
+      excludedRecommendedCandidateIds = [...new Set((recommendedResult.data || []).map((item) => item.candidate_id).filter(Boolean))];
+    }
+
+    const candidateSelect = activeProject || recommendedState === FILTER_ONLY
       ? "*, candidate_projects(*, Projekty(*)), filter_links:candidate_projects!inner(id, project_id, recommended_to_client)"
       : "*, candidate_projects(*, Projekty(*))";
 
     let candidateQuery = supabase.from("candidates").select(candidateSelect, { count: "exact" });
     if (activeProject) candidateQuery = candidateQuery.eq("filter_links.project_id", activeProject);
-    if (onlyRecommended) candidateQuery = candidateQuery.eq("filter_links.recommended_to_client", true);
+    if (recommendedState === FILTER_ONLY) candidateQuery = candidateQuery.eq("filter_links.recommended_to_client", true);
+    if (excludedRecommendedCandidateIds.length > 0) candidateQuery = candidateQuery.not("id", "in", `(${excludedRecommendedCandidateIds.join(",")})`);
     if (globalStatusFilter) candidateQuery = candidateQuery.eq("status", globalStatusFilter);
-    if (onlyFavorites) candidateQuery = candidateQuery.eq("favorite", true);
-    if (onlySourcedMateusz) candidateQuery = candidateQuery.eq("sourced_by_mateusz", true);
-    if (onlySourcedKlaudia) candidateQuery = candidateQuery.eq("sourced_by_klaudia", true);
-    if (onlyPrefersRemote) candidateQuery = candidateQuery.eq("prefers_remote", true);
-    if (onlyPrefersUop) candidateQuery = candidateQuery.eq("prefers_uop", true);
-    if (onlyPrefersB2b) candidateQuery = candidateQuery.eq("prefers_b2b", true);
+    candidateQuery = applySupabaseFlagFilter(candidateQuery, "favorite", onlyFavorites);
+    candidateQuery = applySupabaseFlagFilter(candidateQuery, "sourced_by_mateusz", onlySourcedMateusz);
+    candidateQuery = applySupabaseFlagFilter(candidateQuery, "sourced_by_klaudia", onlySourcedKlaudia);
+    candidateQuery = applySupabaseFlagFilter(candidateQuery, "prefers_remote", onlyPrefersRemote);
+    candidateQuery = applySupabaseFlagFilter(candidateQuery, "prefers_uop", onlyPrefersUop);
+    candidateQuery = applySupabaseFlagFilter(candidateQuery, "prefers_b2b", onlyPrefersB2b);
     if (!advancedMode && cleanSearchTerm(debouncedQuery)) {
       const term = cleanSearchTerm(debouncedQuery);
       candidateQuery = candidateQuery?.or(`name.ilike.%${term}%,email.ilike.%${term}%,telefon.ilike.%${term}%,lokalizacja.ilike.%${term}%,tagi.ilike.%${term}%,jezyk_programowania.ilike.%${term}%,framework.ilike.%${term}%`);
@@ -410,7 +452,7 @@ export default function MiniATSApp() {
 
   useEffect(() => {
     setCandidatePage(1);
-  }, [debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, onlyFavorites, onlyRecommended, onlySourcedMateusz, onlySourcedKlaudia, onlyPrefersRemote, onlyPrefersUop, onlyPrefersB2b, onlyDueReminders, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy]);
+  }, [debouncedQuery, advancedMode, globalStatusFilter, projectFilter, clientProjectId, onlyDueReminders, languageFilter, frameworkFilter, tagFilter, minExperience, maxExperience, sortBy]);
 
   useEffect(() => {
     if (session || clientView) refreshAll(candidatePage);
@@ -836,8 +878,8 @@ export default function MiniATSApp() {
 
   const applyChip = (chip) => {
     preserveScroll(() => {
-      if (chip === "Recommended") setOnlyRecommended((prev) => !prev);
-      else if (chip === "Shortlist") setOnlyFavorites((prev) => !prev);
+      if (chip === "Recommended") setOnlyRecommended((prev) => nextFlagFilterState(prev));
+      else if (chip === "Shortlist") setOnlyFavorites((prev) => nextFlagFilterState(prev));
       else setQuery((prev) => (prev ? `${prev} ${chip}` : chip));
     });
   };
@@ -851,13 +893,14 @@ export default function MiniATSApp() {
       const matchesQuery = advancedMode ? matchesBooleanQuery(text, debouncedQuery) : includesText(text, debouncedQuery);
       const matchesStatus = !globalStatusFilter || candidate.status === globalStatusFilter || relations.some((relation) => relation.status === globalStatusFilter);
       const matchesProject = !activeProject || relations.some((relation) => relation.project_id === activeProject);
-      const matchesFavorite = !onlyFavorites || candidate.favorite;
-      const matchesRecommended = !onlyRecommended || relations.some((relation) => relation.recommended_to_client && (!activeProject || relation.project_id === activeProject));
-      const matchesSourcedMateusz = !onlySourcedMateusz || candidate.sourced_by_mateusz;
-      const matchesSourcedKlaudia = !onlySourcedKlaudia || candidate.sourced_by_klaudia;
-      const matchesRemote = !onlyPrefersRemote || candidate.prefers_remote;
-      const matchesUop = !onlyPrefersUop || candidate.prefers_uop;
-      const matchesB2b = !onlyPrefersB2b || candidate.prefers_b2b;
+      const recommendedForScope = relations.some((relation) => relation.recommended_to_client && (!activeProject || relation.project_id === activeProject));
+      const matchesFavorite = matchesFlagFilter(candidate.favorite, onlyFavorites);
+      const matchesRecommended = matchesFlagFilter(recommendedForScope, onlyRecommended);
+      const matchesSourcedMateusz = matchesFlagFilter(candidate.sourced_by_mateusz, onlySourcedMateusz);
+      const matchesSourcedKlaudia = matchesFlagFilter(candidate.sourced_by_klaudia, onlySourcedKlaudia);
+      const matchesRemote = matchesFlagFilter(candidate.prefers_remote, onlyPrefersRemote);
+      const matchesUop = matchesFlagFilter(candidate.prefers_uop, onlyPrefersUop);
+      const matchesB2b = matchesFlagFilter(candidate.prefers_b2b, onlyPrefersB2b);
       const matchesDueReminder = !onlyDueReminders || (candidate.reminder_date && candidate.reminder_date <= today);
       const matchesLanguage = splitTerms(languageFilter).every((term) => includesText(candidate.jezyk_programowania, term));
       const matchesFramework = splitTerms(frameworkFilter).every((term) => includesText(candidate.framework, term));
@@ -904,13 +947,13 @@ export default function MiniATSApp() {
     setAdvancedQuery(payload.advancedQuery || "");
     setGlobalStatusFilter(payload.globalStatusFilter || "");
     setProjectFilter(payload.projectFilter || "");
-    setOnlyFavorites(Boolean(payload.onlyFavorites));
-    setOnlyRecommended(Boolean(payload.onlyRecommended));
-    setOnlySourcedMateusz(Boolean(payload.onlySourcedMateusz));
-    setOnlySourcedKlaudia(Boolean(payload.onlySourcedKlaudia));
-    setOnlyPrefersRemote(Boolean(payload.onlyPrefersRemote));
-    setOnlyPrefersUop(Boolean(payload.onlyPrefersUop));
-    setOnlyPrefersB2b(Boolean(payload.onlyPrefersB2b));
+    setOnlyFavorites(normalizeFlagFilterState(payload.onlyFavorites));
+    setOnlyRecommended(normalizeFlagFilterState(payload.onlyRecommended));
+    setOnlySourcedMateusz(normalizeFlagFilterState(payload.onlySourcedMateusz));
+    setOnlySourcedKlaudia(normalizeFlagFilterState(payload.onlySourcedKlaudia));
+    setOnlyPrefersRemote(normalizeFlagFilterState(payload.onlyPrefersRemote));
+    setOnlyPrefersUop(normalizeFlagFilterState(payload.onlyPrefersUop));
+    setOnlyPrefersB2b(normalizeFlagFilterState(payload.onlyPrefersB2b));
     setOnlyDueReminders(Boolean(payload.onlyDueReminders));
     setLanguageFilter(payload.languageFilter || "");
     setFrameworkFilter(payload.frameworkFilter || "");
@@ -919,6 +962,28 @@ export default function MiniATSApp() {
     setMaxExperience(payload.maxExperience || "");
     setSortBy(payload.sortBy || "newest");
     setAdvancedOpen(true);
+  };
+
+  const renderTriStateFilter = (label, state, setState, title) => {
+    const normalizedState = normalizeFlagFilterState(state);
+    const isOnly = normalizedState === FILTER_ONLY;
+    const isExclude = normalizedState === FILTER_EXCLUDE;
+    return (
+      <button
+        type="button"
+        onClick={() => preserveScroll(() => setState((prev) => nextFlagFilterState(prev)))}
+        className={`rounded-full border px-3 py-1 text-xs font-black transition ${
+          isOnly
+            ? "border-slate-950 bg-slate-950 text-white"
+            : isExclude
+              ? "border-red-700 bg-red-50 text-red-700"
+              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+        }`}
+        title={`${title} | klik: only -> exclude -> neutral`}
+      >
+        {isExclude ? `!${label}` : label}
+      </button>
+    );
   };
 
   const candidateMatch = (candidate) => {
@@ -1284,13 +1349,25 @@ export default function MiniATSApp() {
           <input className="rounded-xl border p-3" placeholder="Frameworki" value={frameworkFilter} onChange={(event) => setFrameworkFilter(event.target.value)} />
           <input className="rounded-xl border p-3" placeholder="Tagi" value={tagFilter} onChange={(event) => setTagFilter(event.target.value)} />
           <select className="rounded-xl border p-3" value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="newest">Najnowsi</option><option value="oldest">Najstarsi</option><option value="name">Nazwa A-Z</option><option value="rating">Najwyższa ocena</option><option value="experience">Największe doświadczenie</option><option value="recommended">Rekomendowani pierwsi</option><option value="shortlist">Shortlista pierwsza</option><option value="projects">Najwięcej projektów</option></select>
-          <button type="button" onClick={() => { setQuery(""); setAdvancedQuery(""); setGlobalStatusFilter(""); setProjectFilter(""); setOnlyFavorites(false); setOnlyRecommended(false); setOnlySourcedMateusz(false); setOnlySourcedKlaudia(false); setOnlyPrefersRemote(false); setOnlyPrefersUop(false); setOnlyPrefersB2b(false); setOnlyDueReminders(false); setLanguageFilter(""); setFrameworkFilter(""); setTagFilter(""); setMinExperience(""); setMaxExperience(""); }} className="rounded-xl border px-4 py-3 font-bold hover:bg-slate-50">Wyczyść filtry</button>
+          <button type="button" onClick={() => { setQuery(""); setAdvancedQuery(""); setGlobalStatusFilter(""); setProjectFilter(""); setOnlyFavorites(FILTER_NEUTRAL); setOnlyRecommended(FILTER_NEUTRAL); setOnlySourcedMateusz(FILTER_NEUTRAL); setOnlySourcedKlaudia(FILTER_NEUTRAL); setOnlyPrefersRemote(FILTER_NEUTRAL); setOnlyPrefersUop(FILTER_NEUTRAL); setOnlyPrefersB2b(FILTER_NEUTRAL); setOnlyDueReminders(false); setLanguageFilter(""); setFrameworkFilter(""); setTagFilter(""); setMinExperience(""); setMaxExperience(""); }} className="rounded-xl border px-4 py-3 font-bold hover:bg-slate-50">Wyczyść filtry</button>
         </div>
 
         {advancedOpen && <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="grid gap-3 md:grid-cols-4"><input className="rounded-xl border p-3" placeholder="Min years" type="number" value={minExperience} onChange={(event) => setMinExperience(event.target.value)} /><input className="rounded-xl border p-3" placeholder="Max years" type="number" value={maxExperience} onChange={(event) => setMaxExperience(event.target.value)} /><label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={compactMode} onChange={(event) => setCompactMode(event.target.checked)} /> Compact sourcing mode</label><button type="button" onClick={saveCurrentSearch} className="rounded-xl bg-slate-950 px-4 py-3 font-bold text-white">Save search</button></div>{savedSearches.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => applySavedSearch(saved)} className="rounded-full border bg-white px-3 py-1 text-sm font-bold hover:bg-slate-50">{saved.name}</button>)}</div>}</div>}
 
         <div className="mt-4 flex flex-wrap gap-2">{QUICK_CHIPS.map((chip) => <button key={chip} type="button" onClick={() => applyChip(chip)} className="rounded-full border bg-white px-3 py-1 text-xs font-black text-slate-600 hover:bg-slate-50">{chip}</button>)}</div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-4"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyFavorites} onChange={(event) => setOnlyFavorites(event.target.checked)} /> Tylko shortlista ★</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyRecommended} onChange={(event) => setOnlyRecommended(event.target.checked)} /> Tylko rekomendowani ♦</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedMateusz} onChange={(event) => setOnlySourcedMateusz(event.target.checked)} /> Tylko M</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlySourcedKlaudia} onChange={(event) => setOnlySourcedKlaudia(event.target.checked)} /> Tylko K</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersRemote} onChange={(event) => setOnlyPrefersRemote(event.target.checked)} /> Tylko R</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersUop} onChange={(event) => setOnlyPrefersUop(event.target.checked)} /> Tylko U</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyPrefersB2b} onChange={(event) => setOnlyPrefersB2b(event.target.checked)} /> Tylko B</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyDueReminders} onChange={(event) => preserveScroll(() => setOnlyDueReminders(event.target.checked))} /> Tylko do kontaktu dziś / overdue</label></div><p className="text-sm text-slate-500">Znaleziono: <b>{candidateTotal}</b> <span className="text-slate-400">(na stronie: {filteredCandidates.length})</span></p></div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {renderTriStateFilter("Shortlist", onlyFavorites, setOnlyFavorites, "Shortlista")}
+            {renderTriStateFilter("Diamond", onlyRecommended, setOnlyRecommended, "Rekomendowani do klienta")}
+            {renderTriStateFilter("M", onlySourcedMateusz, setOnlySourcedMateusz, "Pozyskany przez Mateusza")}
+            {renderTriStateFilter("K", onlySourcedKlaudia, setOnlySourcedKlaudia, "Pozyskany przez Klaudię")}
+            {renderTriStateFilter("R", onlyPrefersRemote, setOnlyPrefersRemote, "Praca zdalna")}
+            {renderTriStateFilter("U", onlyPrefersUop, setOnlyPrefersUop, "Umowa o pracę / UoP")}
+            {renderTriStateFilter("B", onlyPrefersB2b, setOnlyPrefersB2b, "B2B")}
+            <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={onlyDueReminders} onChange={(event) => preserveScroll(() => setOnlyDueReminders(event.target.checked))} /> Tylko do kontaktu dziś / overdue</label>
+          </div>
+          <p className="text-sm text-slate-500">Znaleziono: <b>{candidateTotal}</b> <span className="text-slate-400">(na stronie: {filteredCandidates.length})</span></p>
+        </div>
       </section>
       {loading && <div className="rounded-3xl bg-white p-6 text-center shadow-sm">Ładowanie...</div>}
       {!loading && filteredCandidates.length === 0 && <div className="rounded-3xl bg-white p-10 text-center shadow-sm">Brak kandydatów.</div>}
